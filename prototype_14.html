@@ -1,0 +1,1679 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=1440">
+  <title>Multi-fleet Orchestrator</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin></script>
+  <script src="https://unpkg.com/lucide@0.453.0/dist/umd/lucide.min.js"></script>
+  <style>
+    html,body,#root{height:100%;margin:0}
+    body{font-family:-apple-system,BlinkMacSystemFont,system-ui,sans-serif;background:#f8fafc;color:#0f172a;-webkit-font-smoothing:antialiased}
+    @keyframes pulseRing{0%{transform:scale(.9);opacity:.6}80%{transform:scale(2);opacity:0}100%{transform:scale(2);opacity:0}}
+    .pulse-ring{animation:pulseRing 1.8s ease-out infinite;transform-origin:center}
+    @keyframes shimmer{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+    .shimmer-bar{background:linear-gradient(90deg,rgba(37,99,235,0),rgba(37,99,235,.35),rgba(37,99,235,0));background-size:200% 100%;animation:shimmer 1.6s linear infinite}
+    .tnum{font-variant-numeric:tabular-nums}
+    .grid-bg{background-image:linear-gradient(to right,#e2e8f0 1px,transparent 1px),linear-gradient(to bottom,#e2e8f0 1px,transparent 1px);background-size:40px 40px}
+    .dot-bg{background-image:radial-gradient(#cbd5e1 1px,transparent 1px);background-size:18px 18px}
+    ::-webkit-scrollbar{width:8px;height:8px}
+    ::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:8px;border:2px solid #f8fafc}
+    ::-webkit-scrollbar-track{background:transparent}
+  </style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState,useEffect,useRef,useMemo}=React;
+/* Lucide icon wrapper */
+const _ic={};
+function Icon({name,size=16,strokeWidth=1.75,className="",style={}}){
+  if(!_ic[name]){const reg=(window.lucide&&window.lucide.icons)||{};const k=name.replace(/(^|-)(\w)/g,function(_,a,c){return c.toUpperCase();});_ic[name]=reg[k]||reg[name]||null;}
+  const e=_ic[name];
+  if(!e)return React.createElement('span',{className:'inline-block '+className,style:{width:size,height:size,...style}});
+  function kids(en){if(Array.isArray(en)&&en.length>=3&&Array.isArray(en[2]))return en[2];if(Array.isArray(en)&&en.every(function(n){return Array.isArray(n);}))return en;return[];}
+  function rn(node,idx){if(!Array.isArray(node))return null;const tag=node[0],attrs=node[1]||{},ch=node[2];const p={key:idx};for(const k in attrs){if(['stroke-width','stroke-linecap','stroke-linejoin','stroke-dasharray','fill-rule','clip-rule'].includes(k))p[k.replace(/-([a-z])/g,function(_,c){return c.toUpperCase();})]=attrs[k];else p[k]=attrs[k];}return React.createElement(tag,p,Array.isArray(ch)?ch.map(rn):null);}
+  return React.createElement('svg',{width:size,height:size,viewBox:'0 0 24 24',fill:'none',stroke:'currentColor',strokeWidth:strokeWidth,strokeLinecap:'round',strokeLinejoin:'round',className:className,style:style,'aria-hidden':true},kids(e).map(rn));
+}
+</script>
+<script type="text/babel">
+
+/* ── custom CSS ── */
+const CSS = `
+  @keyframes pulseRing{0%{transform:scale(.9);opacity:.6}80%{transform:scale(2);opacity:0}100%{transform:scale(2);opacity:0}}
+  .pulse-ring{animation:pulseRing 1.8s ease-out infinite;transform-origin:center}
+  @keyframes shimmer{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+  .shimmer-bar{background:linear-gradient(90deg,rgba(37,99,235,0),rgba(37,99,235,.35),rgba(37,99,235,0));background-size:200% 100%;animation:shimmer 1.6s linear infinite}
+  .tnum{font-variant-numeric:tabular-nums}
+  .grid-bg{background-image:linear-gradient(to right,#e2e8f0 1px,transparent 1px),linear-gradient(to bottom,#e2e8f0 1px,transparent 1px);background-size:40px 40px}
+  .dot-bg{background-image:radial-gradient(#cbd5e1 1px,transparent 1px);background-size:18px 18px}
+  *{box-sizing:border-box}
+  body{margin:0}
+`;
+
+/* ── Data ── */
+const fleets = [
+  { id:"amr",  name:"Tool",   color:"#2563eb" },
+  { id:"agv",  name:"WAVE",   color:"#0ea5e9" },
+  { id:"arm",  name:"Parts",  color:"#7c3aed" },
+  { id:"semi", name:"SEMI-x", color:"#16a34a" },
+];
+const robots = [
+  { id:"AMR-01", fleet:"amr",  status:"run",        battery:82, task:"PICK-2041" },
+  { id:"AMR-02", fleet:"amr",  status:"run",        battery:64, task:"MOVE-2042" },
+  { id:"AMR-03", fleet:"amr",  status:"idle",       battery:95, task:null },
+  { id:"AMR-04", fleet:"amr",  status:"charge",     battery:31, task:null },
+  { id:"AGV-01", fleet:"agv",  status:"run",        battery:71, task:"TRANS-1102" },
+  { id:"AGV-02", fleet:"agv",  status:"down",       battery:58, task:"TRANS-1103" },
+  { id:"ARM-01", fleet:"arm",  status:"manual",     battery:88, task:"ASSY-9001" },
+  { id:"ARM-02", fleet:"arm",  status:"disconnect", battery:90, task:null },
+  { id:"SEMI-01",fleet:"semi", status:"run",        battery:76, task:"WAFER-2201" },
+  { id:"SEMI-02",fleet:"semi", status:"idle",       battery:92, task:null },
+];
+const statuses = [
+  { id:"run",        label:"가동중",   short:"가동", color:"#10b981", bg:"#d1fae5", fg:"#047857" },
+  { id:"idle",       label:"대기",     short:"대기", color:"#94a3b8", bg:"#f1f5f9", fg:"#475569" },
+  { id:"down",       label:"오류",     short:"오류", color:"#e11d48", bg:"#ffe4e6", fg:"#be123c" },
+  { id:"charge",     label:"충전중",   short:"충전", color:"#3b82f6", bg:"#dbeafe", fg:"#1d4ed8" },
+  { id:"manual",     label:"수동조작", short:"수동", color:"#f59e0b", bg:"#fef3c7", fg:"#b45309" },
+  { id:"disconnect", label:"연결끊김", short:"끊김", color:"#64748b", bg:"#e2e8f0", fg:"#334155" },
+];
+const statusMap = Object.fromEntries(statuses.map(s=>[s.id,s]));
+const floors = [
+  { id:"f2",   label:"Floor 2 · 자동화 라인", robots:8 },
+  { id:"f1",   label:"Floor 1 · 입출고동",    robots:4 },
+  { id:"f3",   label:"Floor 3 · QC 라인",     robots:2 },
+  { id:"yard", label:"옥외 · 셔틀 도크",       robots:3 },
+];
+const actionTypes = [
+  { id:"MOVE",   label:"이동",   icon:"Navigation",      color:"#2563eb", defaultDuration:8,  fleets:["amr","agv"] },
+  { id:"LIFT",   label:"리프트", icon:"ArrowUpFromLine", color:"#0891b2", defaultDuration:4,  fleets:["amr","arm"] },
+  { id:"LOAD",   label:"상차",   icon:"PackagePlus",     color:"#059669", defaultDuration:6,  fleets:["amr","agv","arm"] },
+  { id:"UNLOAD", label:"하차",   icon:"PackageMinus",    color:"#d97706", defaultDuration:6,  fleets:["amr","agv","arm"] },
+  { id:"SCAN",   label:"스캔",   icon:"ScanLine",        color:"#7c3aed", defaultDuration:3,  fleets:["amr","arm"] },
+  { id:"WAIT",   label:"대기",   icon:"Pause",           color:"#64748b", defaultDuration:5,  fleets:["amr","agv","arm"] },
+  { id:"CHARGE", label:"충전",   icon:"BatteryCharging", color:"#16a34a", defaultDuration:20, fleets:["amr","agv"] },
+  { id:"GRIP",   label:"그립",   icon:"Hand",            color:"#9333ea", defaultDuration:2,  fleets:["arm"] },
+  { id:"DOCK",   label:"도킹",   icon:"Anchor",          color:"#0d9488", defaultDuration:4,  fleets:["amr","agv"] },
+];
+const mapNodes = [
+  { id:"MN-1",  label:"A동 입고대",   x:110, y:110, fleets:["amr","agv"] },
+  { id:"MN-2",  label:"A동 적재 #1", x:220, y:110, fleets:["amr","agv"] },
+  { id:"MN-3",  label:"A동 적재 #2", x:320, y:160, fleets:["amr","agv"] },
+  { id:"MN-4",  label:"교차 통로",    x:420, y:220, fleets:["amr","agv"] },
+  { id:"MN-5",  label:"B동 하역 #1", x:540, y:280, fleets:["amr","agv"] },
+  { id:"MN-6",  label:"B동 하역 #2", x:650, y:280, fleets:["amr","agv"] },
+  { id:"MN-7",  label:"QC 라인 A",   x:540, y:360, fleets:["amr"] },
+  { id:"MN-8",  label:"QC 라인 B",   x:650, y:360, fleets:["amr"] },
+  { id:"MN-9",  label:"충전소 1",    x:110, y:360, fleets:["amr","agv"] },
+  { id:"MN-10", label:"충전소 2",    x:200, y:360, fleets:["amr","agv"] },
+  { id:"MN-11", label:"ARM 워크셀 A",x:360, y:360, fleets:["arm"] },
+  { id:"MN-12", label:"ARM 워크셀 B",x:430, y:360, fleets:["arm"] },
+];
+const recipes = [
+  { id:"rcp-01", name:"A동→B동 자재이송", fleet:"amr", status:"published",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:6},{nodeId:"N2",actionType:"LOAD",duration:5},{nodeId:"N3",actionType:"MOVE",duration:9},{nodeId:"N4",actionType:"UNLOAD",duration:5}],
+    nodes:[{id:"N1",x:120,y:140,label:"Pick-A"},{id:"N2",x:280,y:140,label:"Load-A"},{id:"N3",x:460,y:260,label:"Drop-B"},{id:"N4",x:600,y:260,label:"Stage-B"}]},
+  { id:"rcp-02", name:"QC 라인 검수 순회", fleet:"amr", status:"published",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:4},{nodeId:"N2",actionType:"SCAN",duration:3},{nodeId:"N3",actionType:"MOVE",duration:5},{nodeId:"N4",actionType:"SCAN",duration:3},{nodeId:"N5",actionType:"MOVE",duration:5}], nodes:[]},
+  { id:"rcp-03", name:"충전 스테이션 복귀", fleet:"amr", status:"published",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:7},{nodeId:"N2",actionType:"CHARGE",duration:25}], nodes:[]},
+  { id:"rcp-04", name:"팔레트 적재 시퀀스", fleet:"arm", status:"draft",
+    steps:[{nodeId:"N1",actionType:"WAIT",duration:2},{nodeId:"N2",actionType:"LIFT",duration:4},{nodeId:"N3",actionType:"LOAD",duration:6}], nodes:[]},
+  { id:"rcp-05", name:"AGV 라인 보충", fleet:"agv", status:"published",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:10},{nodeId:"N2",actionType:"UNLOAD",duration:5},{nodeId:"N3",actionType:"MOVE",duration:8}], nodes:[]},
+  { id:"rcp-06", name:"야간 순찰 루틴", fleet:"amr", status:"draft",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:12},{nodeId:"N2",actionType:"SCAN",duration:3},{nodeId:"N3",actionType:"MOVE",duration:12}], nodes:[]},
+];
+const recipeDuration = r => r.steps.reduce((s,st)=>s+st.duration,0);
+const initOrders = [
+  {id:"ord-001",robotId:"AMR-01",recipeId:"rcp-01",start:8*60+15, status:"done"},
+  {id:"ord-002",robotId:"AMR-01",recipeId:"rcp-02",start:9*60+30, status:"done"},
+  {id:"ord-003",robotId:"AMR-01",recipeId:"rcp-01",start:11*60+10,status:"running"},
+  {id:"ord-004",robotId:"AMR-02",recipeId:"rcp-02",start:8*60,    status:"done"},
+  {id:"ord-005",robotId:"AMR-02",recipeId:"rcp-05",start:10*60+25,status:"queued"},
+  {id:"ord-006",robotId:"AMR-02",recipeId:"rcp-01",start:12*60+40,status:"queued"},
+  {id:"ord-007",robotId:"AMR-03",recipeId:"rcp-03",start:9*60+5,  status:"done"},
+  {id:"ord-008",robotId:"AMR-03",recipeId:"rcp-01",start:11*60+30,status:"queued"},
+  {id:"ord-009",robotId:"AMR-04",recipeId:"rcp-03",start:7*60+45, status:"running"},
+  {id:"ord-010",robotId:"AGV-01",recipeId:"rcp-05",start:9*60,    status:"done"},
+  {id:"ord-011",robotId:"AGV-01",recipeId:"rcp-05",start:10*60+50,status:"running"},
+  {id:"ord-012",robotId:"AGV-02",recipeId:"rcp-05",start:8*60+20, status:"error"},
+  {id:"ord-013",robotId:"ARM-01",recipeId:"rcp-04",start:8*60+30, status:"done"},
+  {id:"ord-014",robotId:"ARM-01",recipeId:"rcp-04",start:10*60,   status:"running"},
+  {id:"ord-015",robotId:"ARM-02",recipeId:"rcp-04",start:9*60+15, status:"done"},
+];
+const logs = [
+  {ts:"13:42:08",level:"info", robot:"AMR-01",msg:"Recipe 'A동→B동 자재이송' 완료 (PICK-2041)"},
+  {ts:"13:41:55",level:"warn", robot:"AMR-04",msg:"배터리 32% 도달 - 충전 스테이션으로 라우팅"},
+  {ts:"13:40:12",level:"error",robot:"AGV-02",msg:"장애물 감지 - 경로 재계산 실패"},
+  {ts:"13:39:01",level:"info", robot:"ARM-01",msg:"팔레트 적재 시퀀스 시작 (ASSY-9001)"},
+  {ts:"13:37:44",level:"info", robot:"AMR-02",msg:"노드 N3 → N4 이동 중"},
+  {ts:"13:35:20",level:"info", robot:"AGV-01",msg:"TRANS-1102 작업 디스패치 완료"},
+  {ts:"13:33:02",level:"warn", robot:"AMR-03",msg:"스케줄 갭 감지 - 대기 상태 진입"},
+  {ts:"13:31:15",level:"info", robot:"AMR-01",msg:"스캔 완료: SKU-44218 (PASS)"},
+  {ts:"13:28:38",level:"info", robot:"ARM-02",msg:"Idle 상태 진입 - 대기"},
+  {ts:"13:26:11",level:"error",robot:"AGV-02",msg:"EMS 호출 - 운영자 개입 필요"},
+];
+const stations = [
+  {code:"ST-A01",name:"A동 입고 스테이션",zone:"A동",x:12,y:8, type:"load"},
+  {code:"ST-A02",name:"A동 적재대 #2",    zone:"A동",x:18,y:8, type:"load"},
+  {code:"ST-B01",name:"B동 하역장",       zone:"B동",x:32,y:18,type:"unload"},
+  {code:"ST-B02",name:"B동 검수 라인",    zone:"B동",x:40,y:18,type:"qc"},
+  {code:"ST-C01",name:"충전소 1열",       zone:"C동",x:6, y:22,type:"charge"},
+  {code:"ST-C02",name:"충전소 2열",       zone:"C동",x:6, y:26,type:"charge"},
+];
+
+/* ── helpers ── */
+const fmtTime = m => `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+const fleetMeta = id => fleets.find(f=>f.id===id)||{name:id,color:"#64748b"};
+const actMeta = id => actionTypes.find(a=>a.id===id)||{id,label:id,icon:"Circle",color:"#64748b"};
+
+/* ── NAV ── */
+const NAV = [
+  {id:"home",     label:"모니터링 홈",  icon:"LayoutDashboard"},
+  {id:"analytics",label:"분석 대시보드",icon:"BarChart3"},
+  {id:"basis",    label:"기준 관리 정보",icon:"Database"},
+  {id:"recipe",   label:"레시피 생성",  icon:"Workflow"},
+  {id:"schedule", label:"작업 스케줄링",icon:"CalendarRange"},
+  {id:"logs",     label:"로그 조회",   icon:"ScrollText"},
+];
+
+/* ══════════════════════════════════════════
+   SHELL
+══════════════════════════════════════════ */
+function Sidebar({ active, onChange }) {
+  return (
+    <aside className="w-56 shrink-0 h-full border-r border-slate-200 bg-white flex flex-col">
+      <div className="h-14 flex items-center gap-2.5 px-4 border-b border-slate-200">
+        <div className="w-7 h-7 rounded-md bg-blue-600 grid place-items-center text-white">
+          <Icon name="Boxes" size={16} strokeWidth={2}/>
+        </div>
+        <div className="leading-tight">
+          <div className="text-[13px] font-semibold text-slate-900">Connection - ICS</div>
+          <div className="text-[10.5px] text-slate-500">Orchestrator · v2.4</div>
+        </div>
+      </div>
+      <nav className="flex-1 overflow-y-auto p-2">
+        <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider px-2.5 pt-3 pb-1.5">Workspace</div>
+        {NAV.map(n => {
+          const on = n.id===active;
+          return (
+            <button key={n.id} onClick={()=>onChange(n.id)}
+              className={"w-full flex items-center gap-2.5 px-2.5 py-2 rounded-md text-[13px] font-medium transition-colors mb-0.5 "+(on?"bg-blue-50 text-blue-700":"text-slate-700 hover:bg-slate-100")}>
+              <Icon name={n.icon} size={16} strokeWidth={on?2:1.75} className={on?"text-blue-600":"text-slate-500"}/>
+              <span>{n.label}</span>
+              {on && <span className="ml-auto w-1 h-4 rounded-full bg-blue-600"/>}
+            </button>
+          );
+        })}
+      </nav>
+      <div className="p-3 border-t border-slate-200">
+        <div className="rounded-lg bg-slate-50 border border-slate-200 p-2.5">
+          <div className="flex items-center gap-2 text-[11.5px] text-slate-500">
+            <Icon name="Activity" size={12} className="text-emerald-500"/>
+            <span>모든 시스템 정상</span>
+          </div>
+          <div className="mt-1 text-[10.5px] text-slate-400">마지막 동기화 · 13:42:08</div>
+        </div>
+      </div>
+    </aside>
+  );
+}
+
+function Header({ activeLabel, onOpenCmd }) {
+  return (
+    <header className="h-14 shrink-0 bg-white border-b border-slate-200 px-5 flex items-center gap-4">
+      <div className="flex items-center gap-2">
+        <span className="text-[12px] text-slate-400">Workspace</span>
+        <Icon name="ChevronRight" size={12} className="text-slate-300"/>
+        <span className="text-[13.5px] font-semibold text-slate-900">{activeLabel}</span>
+      </div>
+
+      <button onClick={onOpenCmd}
+        className="ml-auto h-9 flex items-center gap-2 px-3 rounded-md bg-slate-50 border border-slate-200 hover:bg-white text-[12.5px] text-slate-500 min-w-[220px]">
+        <Icon name="Search" size={14} className="text-slate-400"/>
+        <span>레시피 · 로봇 · 오더 검색</span>
+        <span className="ml-auto flex items-center gap-1">
+          <kbd className="font-mono text-[10.5px] bg-white border border-slate-200 rounded px-1.5 py-px text-slate-500">⌘K</kbd>
+        </span>
+      </button>
+      <button className="relative w-9 h-9 grid place-items-center rounded-md hover:bg-slate-100 text-slate-600">
+        <Icon name="Bell" size={16}/>
+        <span className="absolute top-1.5 right-1.5 w-1.5 h-1.5 rounded-full bg-rose-500"/>
+      </button>
+      <div className="flex items-center gap-2 pl-3 border-l border-slate-200">
+        <div className="w-7 h-7 rounded-full bg-gradient-to-br from-blue-500 to-indigo-600 grid place-items-center text-white text-[11px] font-semibold">김</div>
+        <div className="leading-tight">
+          <div className="text-[12.5px] font-medium text-slate-900">김삼성</div>
+          <div className="text-[10.5px] text-slate-500">Master</div>
+        </div>
+      </div>
+    </header>
+  );
+}
+
+function CommandPalette({ open, onClose, onJump }) {
+  const [q, setQ] = useState("");
+  const ref = useRef(null);
+  useEffect(()=>{ if(open) setTimeout(()=>ref.current?.focus(),50); else setQ(""); },[open]);
+  if (!open) return null;
+  const ql = q.toLowerCase();
+  const sections = [
+    { title:"레시피", icon:"Workflow",
+      items: recipes.filter(r=>!q||r.name.toLowerCase().includes(ql)).slice(0,5).map(r=>({
+        key:"r-"+r.id, left:r.name, right:r.id, jump:{view:"schedule",payload:{focusRecipeId:r.id}}
+      }))
+    },
+    { title:"로봇", icon:"Bot",
+      items: robots.filter(r=>!q||r.id.toLowerCase().includes(ql)).slice(0,4).map(r=>({
+        key:"b-"+r.id, left:r.id, right:r.task||"Idle", jump:{view:"home",payload:{}}
+      }))
+    },
+    { title:"이동", icon:"Compass",
+      items: NAV.filter(n=>!q||n.label.includes(q)).map(n=>({
+        key:"n-"+n.id, left:n.label, right:"메뉴", jump:{view:n.id,payload:{}}
+      }))
+    },
+  ].filter(s=>s.items.length>0);
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/30 backdrop-blur-sm flex items-start justify-center pt-[14vh]" onClick={onClose}>
+      <div className="w-[580px] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden" onClick={e=>e.stopPropagation()}>
+        <div className="flex items-center gap-3 px-4 h-14 border-b border-slate-200">
+          <Icon name="Search" size={18} className="text-slate-400"/>
+          <input ref={ref} value={q} onChange={e=>setQ(e.target.value)}
+            placeholder="레시피, 로봇 ID, 또는 메뉴를 입력하세요…"
+            className="flex-1 bg-transparent outline-none text-[14px] text-slate-900 placeholder:text-slate-400"/>
+          <kbd className="font-mono text-[10.5px] bg-slate-50 border border-slate-200 rounded px-1.5 py-px text-slate-500">ESC</kbd>
+        </div>
+        <div className="max-h-[380px] overflow-y-auto py-2">
+          {sections.length===0 && <div className="px-4 py-8 text-center text-[13px] text-slate-400">결과가 없습니다.</div>}
+          {sections.map(s=>(
+            <div key={s.title} className="mb-1">
+              <div className="px-4 pt-2 pb-1 text-[10.5px] font-medium text-slate-400 uppercase tracking-wider flex items-center gap-1.5">
+                <Icon name={s.icon} size={11}/> {s.title}
+              </div>
+              {s.items.map(it=>(
+                <button key={it.key} onClick={()=>{onJump(it.jump);onClose();}}
+                  className="w-full flex items-center gap-3 px-4 py-2 hover:bg-blue-50 text-left group">
+                  <Icon name={s.icon} size={14} className="text-slate-400 group-hover:text-blue-600"/>
+                  <span className="text-[13px] text-slate-900 flex-1">{it.left}</span>
+                  <span className="text-[11.5px] text-slate-400 tnum">{it.right}</span>
+                  <Icon name="CornerDownLeft" size={12} className="text-slate-300 group-hover:text-blue-500"/>
+                </button>
+              ))}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   MONITORING HOME
+══════════════════════════════════════════ */
+function KpiCard({ label, value, trend, icon, tone }) {
+  const tc = {emerald:"text-emerald-500 bg-emerald-50",blue:"text-blue-500 bg-blue-50",slate:"text-slate-500 bg-slate-100",rose:"text-rose-500 bg-rose-50"}[tone];
+  const up = trend&&trend.startsWith("+")&&!trend.startsWith("+0");
+  return (
+    <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm">
+      <div className="flex items-center justify-between"><span className="text-[11.5px] text-slate-500">{label}</span><div className={"w-7 h-7 rounded-md grid place-items-center "+tc}><Icon name={icon} size={13}/></div></div>
+      <div className="flex items-baseline gap-2 mt-1">
+        <div className="text-[22px] font-semibold text-slate-900 tnum">{value}</div>
+        {trend && <span className={"text-[10.5px] font-medium tnum "+(up?"text-emerald-600":"text-slate-500")}>{trend}</span>}
+      </div>
+    </div>
+  );
+}
+function AlertRow({ level, robot, msg, time }) {
+  const c = level==="error"?{bg:"bg-rose-50",icon:"AlertOctagon",cl:"text-rose-600"}:{bg:"bg-amber-50",icon:"AlertTriangle",cl:"text-amber-600"};
+  return (
+    <div className="px-4 py-2.5 flex items-start gap-2.5">
+      <div className={"w-7 h-7 rounded-md grid place-items-center shrink-0 "+c.bg}><Icon name={c.icon} size={13} className={c.cl}/></div>
+      <div className="flex-1 min-w-0"><div className="flex items-center gap-1.5"><span className="text-[11.5px] font-semibold text-slate-900 tnum">{robot}</span><span className="text-[10.5px] text-slate-400 tnum">· {time} 전</span></div><div className="text-[11.5px] text-slate-700 mt-0.5">{msg}</div></div>
+      <button className="text-[10.5px] font-medium text-blue-600">처리</button>
+    </div>
+  );
+}
+function CmdSection({ icon, tone, title, subtitle, children }) {
+  const acc = {blue:{bg:"bg-blue-50",fg:"text-blue-700"},indigo:{bg:"bg-indigo-50",fg:"text-indigo-700"},emerald:{bg:"bg-emerald-50",fg:"text-emerald-700"},rose:{bg:"bg-rose-50",fg:"text-rose-700"}}[tone]||{bg:"bg-slate-50",fg:"text-slate-700"};
+  return (
+    <div className="rounded-md border border-slate-200 p-2.5">
+      <div className="flex items-center gap-2 mb-2">
+        <div className={"w-6 h-6 rounded grid place-items-center "+acc.bg+" "+acc.fg}><Icon name={icon} size={12}/></div>
+        <div className="leading-tight"><div className="text-[12.5px] font-semibold text-slate-900">{title}</div><div className="text-[10px] text-slate-500">{subtitle}</div></div>
+      </div>
+      {children}
+    </div>
+  );
+}
+function CmdSelectField({ label, value, onChange, children }) {
+  return (
+    <div className="relative flex-1 min-w-0">
+      {label && <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9.5px] font-medium text-slate-400 uppercase tracking-wide pointer-events-none">{label}</span>}
+      <select defaultValue={value||""} onChange={onChange} className={"w-full h-7 rounded-md border border-slate-200 bg-white text-[11.5px] outline-none appearance-none cursor-pointer "+(label?"pl-10":"pl-2.5")+" pr-6 text-slate-800 focus:border-blue-400"}>
+        {children}
+      </select>
+      <Icon name="ChevronDown" size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+    </div>
+  );
+}
+function MonitoringHome() {
+  const [focusRobot, setFocusRobot] = useState(null);
+  const [statusFilter, setStatusFilter] = useState(new Set());
+  const [fleetFilter, setFleetFilter] = useState(new Set());
+  const [floorId, setFloorId] = useState(floors[0].id);
+  const [floorDropOpen, setFloorDropOpen] = useState(false);
+  const [cmdTab, setCmdTab] = useState("command");
+  const [panelOpen, setPanelOpen] = useState(false);
+  const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [moveTarget, setMoveTarget] = useState("");
+  const mapRobots = [
+    {id:"AMR-01",x:280,y:130,fleet:"amr",st:"run",    battery:82,task:"PICK-2041", recipe:"A동→B동 자재이송",  progress:64},
+    {id:"AMR-02",x:420,y:200,fleet:"amr",st:"run",    battery:64,task:"MOVE-2042", recipe:"QC 라인 검수 순회", progress:42},
+    {id:"AMR-03",x:140,y:230,fleet:"amr",st:"idle",   battery:95,task:null,        recipe:null,                progress:0},
+    {id:"AMR-04",x:150,y:370,fleet:"amr",st:"charge", battery:31,task:"CHARGE",    recipe:"충전 스테이션 복귀", progress:88},
+    {id:"AGV-01",x:640,y:160,fleet:"agv",st:"run",    battery:71,task:"TRANS-1102",recipe:"AGV 라인 보충",     progress:38},
+    {id:"AGV-02",x:580,y:220,fleet:"agv",st:"down",   battery:58,task:"TRANS-1103",recipe:"AGV 라인 보충",     progress:22},
+    {id:"ARM-01",x:480,y:380,fleet:"arm",st:"manual", battery:88,task:"ASSY-9001", recipe:"팔레트 적재",        progress:71},
+    {id:"ARM-02",x:540,y:380,fleet:"arm",st:"disconnect",battery:90,task:null,     recipe:null,                progress:0},
+    {id:"SEMI-01",x:720,y:360,fleet:"semi",st:"run",  battery:76,task:"WAFER-2201",recipe:"웨이퍼 핸들링",     progress:55},
+    {id:"SEMI-02",x:780,y:360,fleet:"semi",st:"idle", battery:92,task:null,        recipe:null,                progress:0},
+  ];
+  const toggle = (set,key,set2)=>{const n=new Set(set);n.has(key)?n.delete(key):n.add(key);set2(n);};
+  const visible = mapRobots.filter(r=>(statusFilter.size===0||statusFilter.has(r.st))&&(fleetFilter.size===0||fleetFilter.has(r.fleet)));
+  const counts = Object.fromEntries(statuses.map(s=>[s.id,mapRobots.filter(r=>r.st===s.id).length]));
+  const sel = focusRobot ? mapRobots.find(r=>r.id===focusRobot) : null;
+  return (
+    <div className="h-full relative bg-slate-50 overflow-hidden">
+      {/* Scrollable content */}
+      <div className="h-full overflow-auto p-5" style={{paddingRight: panelOpen ? 336 : 20, transition:"padding-right 0.25s cubic-bezier(0.4,0,0.2,1)"}}>
+      {/* KPI */}
+      <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm">
+          <div className="flex items-center justify-between mb-1"><span className="text-[11.5px] text-slate-500">로봇 운영 현황</span><span className="text-[10.5px] text-slate-400 tnum">총 {mapRobots.length}대</span></div>
+          <div className="flex items-baseline gap-4 mb-2">
+            <div><div className="flex items-baseline gap-1"><span className="text-[22px] font-semibold tnum" style={{color:"#047857"}}>{counts.run}</span><span className="text-[11px] text-slate-500">/ {mapRobots.length}</span></div><div className="text-[10px] mt-px" style={{color:"#047857"}}>● 가동</div></div>
+            <div className="h-9 w-px bg-slate-200"/>
+            <div><div className="flex items-baseline gap-1"><span className="text-[22px] font-semibold tnum" style={{color:"#be123c"}}>{counts.down||0}</span><span className="text-[11px] text-slate-500">대</span></div><div className="text-[10px] mt-px" style={{color:"#be123c"}}>● 오류</div></div>
+          </div>
+          <div className="flex h-1.5 rounded-full overflow-hidden bg-slate-100 mb-2">{statuses.map(s=>{const c=counts[s.id]||0;if(!c)return null;return <div key={s.id} style={{width:(c/mapRobots.length*100)+"%",background:s.color}}/>;})}</div>
+          <div className="grid grid-cols-3 gap-x-2 gap-y-0.5 text-[10.5px]">{statuses.map(s=><div key={s.id} className="flex items-center gap-1"><span className="w-1.5 h-1.5 rounded-full" style={{background:s.color}}/><span className="text-slate-600">{s.short}</span><span className="ml-auto font-semibold tnum text-slate-900">{counts[s.id]||0}</span></div>)}</div>
+        </div>
+
+        <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm">
+          <div className="text-[11.5px] text-slate-500 mb-2">Fleet 운영 현황</div>
+          {fleets.map(f=>{const fr=robots.filter(r=>r.fleet===f.id),run=fr.filter(r=>r.status==="run").length,pct=Math.round(run/fr.length*100);return(
+            <div key={f.id} className="mb-2">
+              <div className="flex items-center gap-2 text-[11.5px] mb-1"><span className="w-2 h-2 rounded-full" style={{background:f.color}}/><span className="text-slate-700">{f.name}</span><span className="ml-auto tnum font-medium text-slate-900">{run}/{fr.length}</span></div>
+              <div className="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width:pct+"%",background:f.color}}/></div>
+            </div>
+          );})}
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm">
+          <div className="flex items-center justify-between mb-1"><span className="text-[11.5px] text-slate-500">Order 현황</span></div>
+          <div className="flex items-baseline gap-4 mb-2">
+            <div><span className="text-[22px] font-semibold text-blue-700 tnum">14</span><div className="text-[10.5px] text-blue-700 mt-px">● 진행 중</div></div>
+            <div className="h-9 w-px bg-slate-200"/>
+            <div><span className="text-[22px] font-semibold text-amber-700 tnum">22</span><div className="text-[10.5px] text-amber-700 mt-px">◷ 대기 큐</div></div>
+          </div>
+          <div className="flex items-center gap-2 text-[10.5px]"><span className="text-slate-500">금일 완료율</span><div className="flex-1 h-1 bg-slate-100 rounded-full overflow-hidden"><div className="h-full bg-emerald-500 rounded-full" style={{width:"66%"}}/></div><span className="font-semibold tnum text-slate-900">66%</span></div>
+        </div>
+        <div className="flex flex-col gap-3">
+          <KpiCard label="금일 처리량" value="247" trend="+12%" icon="TrendingUp" tone="emerald"/>
+          <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden flex-1">
+            <div className="h-9 px-3 border-b border-slate-200 flex items-center gap-1.5"><Icon name="AlertTriangle" size={12} className="text-rose-500"/><span className="text-[12px] font-semibold text-slate-900">알람</span><span className="ml-auto text-[11px] font-medium text-rose-600 tnum">2건</span></div>
+            <AlertRow level="error" robot="AGV-02" msg="장애물 감지" time="2m"/>
+          </div>
+        </div>
+      </div>
+      {/* Map full width */}
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="h-11 px-4 border-b border-slate-200 flex items-center gap-2">
+            <Icon name="Map" size={14} className="text-slate-500"/>
+            <div className="relative">
+              <button onClick={()=>setFloorDropOpen(o=>!o)} className="flex items-center gap-1.5 h-8 px-2 rounded hover:bg-slate-100">
+                <span className="text-[13px] font-semibold text-slate-900">{floors.find(f=>f.id===floorId)?.label}</span>
+                <Icon name="ChevronDown" size={12} className="text-slate-400"/>
+              </button>
+              {floorDropOpen && <>
+                <div className="fixed inset-0 z-10" onClick={()=>setFloorDropOpen(false)}/>
+                <div className="absolute z-20 top-full mt-1 left-0 w-[260px] bg-white rounded-lg shadow-xl border border-slate-200 py-1.5 overflow-hidden">
+                  {floors.map(f=>(
+                    <button key={f.id} onClick={()=>{setFloorId(f.id);setFloorDropOpen(false);}}
+                      className={"w-full px-3 py-2 text-left flex items-center gap-2 hover:bg-blue-50 "+(f.id===floorId?"bg-blue-50":"")}>
+                      <Icon name="Map" size={13} className={f.id===floorId?"text-blue-600":"text-slate-400"}/>
+                      <div className="flex-1 min-w-0">
+                        <div className={"text-[12.5px] font-medium "+(f.id===floorId?"text-blue-700":"text-slate-900")}>{f.label}</div>
+                        <div className="text-[10.5px] text-slate-500 tnum">{f.robots}대 운영</div>
+                      </div>
+                      {f.id===floorId && <Icon name="Check" size={12} className="text-blue-600"/>}
+                    </button>
+                  ))}
+                </div>
+              </>}
+            </div>
+            <span className="ml-1 text-[11px] text-slate-500">{visible.length}/{mapRobots.length} 표시</span>
+            <div className="ml-auto flex items-center gap-1">
+              <button className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1"><Icon name="Layers" size={11}/> 레이어</button>
+              <button className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1"><Icon name="Maximize2" size={11}/> 전체화면</button>
+              <div className="w-px h-4 bg-slate-200 mx-1"/>
+              <button onClick={()=>setPanelOpen(o=>!o)}
+                className={"h-7 px-2.5 rounded text-[11.5px] font-medium flex items-center gap-1.5 transition-colors "+(panelOpen?"bg-blue-50 text-blue-700 border border-blue-200":"text-slate-600 hover:bg-slate-100 border border-transparent")}>
+                <Icon name="PanelRightOpen" size={13}/>
+                {panelOpen?"패널 닫기":"Command / Properties"}
+              </button>
+            </div>
+          </div>
+          {/* Filter bar */}
+          <div className="px-4 py-2 border-b border-slate-200 bg-slate-50/40 flex items-center gap-3 flex-wrap">
+            <div className="flex items-center gap-1">
+              <span className="text-[10.5px] font-medium text-slate-500 uppercase mr-1">상태</span>
+              <button onClick={()=>setStatusFilter(new Set())} className={"h-6 px-2 rounded text-[10.5px] font-medium border "+(statusFilter.size===0?"bg-slate-900 text-white border-slate-900":"bg-white text-slate-600 border-slate-200")}>전체</button>
+              {statuses.map(s=>{const on=statusFilter.has(s.id);return <button key={s.id} onClick={()=>toggle(statusFilter,s.id,setStatusFilter)} className={"h-6 px-2 rounded text-[10.5px] font-medium border flex items-center gap-1 "+(on?"text-white border-transparent":"bg-white text-slate-700 border-slate-200")} style={on?{background:s.color}:{}}><span className="w-1.5 h-1.5 rounded-full" style={{background:on?"#fff":s.color}}/>{s.short}<span className={"tnum "+(on?"opacity-80":"text-slate-400")}>{counts[s.id]}</span></button>;})}
+            </div>
+            <div className="h-4 w-px bg-slate-200"/>
+            <div className="flex items-center gap-1">
+              <span className="text-[10.5px] font-medium text-slate-500 uppercase mr-1">Fleet</span>
+              <button onClick={()=>setFleetFilter(new Set())} className={"h-6 px-2 rounded text-[10.5px] font-medium border "+(fleetFilter.size===0?"bg-slate-900 text-white border-slate-900":"bg-white text-slate-600 border-slate-200")}>전체</button>
+              {fleets.map(f=>{const on=fleetFilter.has(f.id);return <button key={f.id} onClick={()=>toggle(fleetFilter,f.id,setFleetFilter)} className={"h-6 px-2 rounded text-[10.5px] font-medium border flex items-center gap-1 "+(on?"text-white border-transparent":"bg-white text-slate-700 border-slate-200")} style={on?{background:f.color}:{}}><span className="w-1.5 h-1.5 rounded-full" style={{background:on?"#fff":f.color}}/>{f.name}</button>;})}
+            </div>
+          </div>
+          {/* Map canvas */}
+          <div className="relative dot-bg" style={{height:460}}>
+            {/* Zone areas */}
+            <div className="absolute top-11 left-11 w-64 h-36 rounded border border-blue-200 bg-blue-50/30 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-blue-700/70 uppercase">Zone A · 입고</span></div>
+            <div className="absolute top-11 right-11 w-72 h-40 rounded border border-emerald-200 bg-emerald-50/30 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-emerald-700/70 uppercase">Zone B · 하역</span></div>
+            <div className="absolute bottom-11 left-11 w-52 h-20 rounded border border-slate-200 bg-slate-100/40 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-slate-500 uppercase">Zone C · 충전</span></div>
+            <div className="absolute bottom-11 right-40 w-60 h-24 rounded border border-purple-200 bg-purple-50/30 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-purple-700/70 uppercase">Zone D · 조립</span></div>
+
+            {/* Edges (SVG) */}
+            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{overflow:"visible"}}>
+              {[
+                // Main route: A → B
+                ["MN-1","MN-2"],["MN-2","MN-3"],["MN-3","MN-4"],["MN-4","MN-5"],["MN-5","MN-6"],
+                // QC branch
+                ["MN-5","MN-7"],["MN-6","MN-8"],["MN-7","MN-8"],
+                // Charging zone
+                ["MN-9","MN-10"],["MN-1","MN-9"],
+                // ARM cells
+                ["MN-11","MN-12"],["MN-4","MN-11"],
+              ].map(([aId,bId],i)=>{
+                const a=mapNodes.find(n=>n.id===aId), b=mapNodes.find(n=>n.id===bId);
+                if(!a||!b) return null;
+                return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.6"/>;
+              })}
+              {/* Arrow markers */}
+              <defs>
+                <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L6,3 z" fill="#94a3b8" opacity="0.7"/>
+                </marker>
+              </defs>
+              {[["MN-1","MN-2"],["MN-3","MN-4"],["MN-4","MN-5"]].map(([aId,bId],i)=>{
+                const a=mapNodes.find(n=>n.id===aId), b=mapNodes.find(n=>n.id===bId);
+                if(!a||!b) return null;
+                const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
+                return <line key={i} x1={a.x} y1={a.y} x2={mx} y2={my} stroke="#94a3b8" strokeWidth="1.5" markerEnd="url(#arr)" opacity="0.5"/>;
+              })}
+            </svg>
+
+            {/* Nodes */}
+            {mapNodes.map(node=>{
+              const isSelNode = selectedNodeId === node.id;
+              return (
+                <div key={node.id} className="absolute cursor-pointer group"
+                  style={{left:node.x, top:node.y, transform:"translate(-50%,-50%)", zIndex:10}}
+                  onClick={()=>{
+                    setSelectedNodeId(isSelNode ? null : node.id);
+                    setMoveTarget(node.id);
+                    setPanelOpen(true);
+                    setCmdTab(isSelNode ? cmdTab : "props");
+                  }}>
+                  <div style={{
+                    width: isSelNode ? 14 : 10,
+                    height: isSelNode ? 14 : 10,
+                    borderRadius: 3,
+                    background: isSelNode ? "#2563eb" : "white",
+                    border: `2px solid ${isSelNode ? "#2563eb" : "#64748b"}`,
+                    boxShadow: isSelNode
+                      ? "0 0 0 4px rgba(37,99,235,0.2), 0 2px 6px rgba(15,23,42,0.2)"
+                      : "0 1px 3px rgba(15,23,42,0.15)",
+                    transition:"all 0.15s",
+                  }}/>
+                  <div style={{
+                    position:"absolute", top: isSelNode ? 17 : 13, left:"50%",
+                    transform:"translateX(-50%)",
+                    fontSize: 9, fontWeight: isSelNode ? 700 : 600,
+                    color: isSelNode ? "#1d4ed8" : "#475569",
+                    whiteSpace:"nowrap",
+                    background: isSelNode ? "rgba(239,246,255,0.95)" : "rgba(255,255,255,0.85)",
+                    padding:"1px 4px", borderRadius:3, lineHeight:1.4,
+                    border: isSelNode ? "1px solid #bfdbfe" : "none",
+                    transition:"all 0.15s",
+                  }}>
+                    {node.label}
+                  </div>
+                </div>
+              );
+            })}
+
+            {/* Robots */}
+            {mapRobots.map(r=>{
+              const isFocus=focusRobot===r.id, isVis=visible.includes(r);
+              const sm=statusMap[r.st], fm=fleets.find(f=>f.id===r.fleet)||{color:"#64748b"};
+              return (
+                <div key={r.id} onClick={()=>isVis&&setFocusRobot(focusRobot===r.id?null:r.id)}
+                  className={"absolute -translate-x-1/2 -translate-y-1/2 transition-opacity "+(isVis?"cursor-pointer opacity-100":"opacity-15 grayscale pointer-events-none")}
+                  style={{left:r.x,top:r.y}}>
+                  {r.st==="run"&&isVis&&<div className="absolute w-8 h-8 rounded-full pulse-ring border-2" style={{borderColor:fm.color,left:-16,top:-16}}/>}
+                  <div className={"w-8 h-8 rounded-full grid place-items-center shadow-md border-2 text-white relative "+(isFocus?"scale-125 z-10 ring-4 ring-blue-300/40":"")} style={{background:fm.color,borderColor:"white"}}>
+                    <Icon name={r.id.startsWith("ARM")?"Cog":"Bot"} size={13}/>
+                    <span className="absolute -bottom-0.5 -right-0.5 w-2.5 h-2.5 rounded-full border-2 border-white" style={{background:sm.color}}/>
+                  </div>
+                  <div className={"absolute top-full left-1/2 -translate-x-1/2 mt-1 text-[10px] font-semibold tnum whitespace-nowrap px-1 rounded "+(isFocus?"bg-slate-900 text-white":"text-slate-700")}>{r.id}</div>
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* Slide Panel — full height, top-level */}
+      <div style={{
+        position:"absolute", top:0, right:0, bottom:0,
+        width:320,
+        transform: panelOpen ? "translateX(0)" : "translateX(100%)",
+        transition:"transform 0.25s cubic-bezier(0.4,0,0.2,1)",
+        zIndex:30,
+        display:"flex", flexDirection:"column",
+        background:"white",
+        borderLeft:"1px solid #e2e8f0",
+        boxShadow: panelOpen ? "-6px 0 24px rgba(15,23,42,0.12)" : "none",
+      }}>
+          {/* Collapse tab on the left edge */}
+          <button
+            onClick={()=>setPanelOpen(o=>!o)}
+            style={{
+              position:"absolute", left:-28, top:"50%", transform:"translateY(-50%)",
+              width:28, height:64,
+              background:"white",
+              border:"1px solid #e2e8f0",
+              borderRight:"none",
+              borderRadius:"8px 0 0 8px",
+              display:"flex", alignItems:"center", justifyContent:"center",
+              cursor:"pointer",
+              boxShadow:"-2px 0 8px rgba(15,23,42,0.06)",
+            }}
+            title={panelOpen?"패널 닫기":"패널 열기"}
+          >
+            <Icon name={panelOpen?"ChevronRight":"ChevronLeft"} size={14} className="text-slate-500"/>
+          </button>
+
+          {/* Tab header */}
+          <div className="h-11 px-3 border-b border-slate-200 flex items-center gap-1 shrink-0">
+            <button onClick={()=>setCmdTab("command")} className={"h-8 px-3 rounded text-[12.5px] font-medium flex items-center gap-1.5 "+(cmdTab==="command"?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-50")}><Icon name="Terminal" size={13}/> Command</button>
+            <button onClick={()=>setCmdTab("props")} className={"h-8 px-3 rounded text-[12.5px] font-medium flex items-center gap-1.5 "+(cmdTab==="props"?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-50")}><Icon name="Info" size={13}/> Properties</button>
+            <button onClick={()=>setPanelOpen(false)} className="ml-auto w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500"><Icon name="X" size={13}/></button>
+          </div>
+          {/* Selected robot strip */}
+          <div className="px-3 py-2.5 border-b border-slate-200 bg-slate-50/50 shrink-0">
+            {selectedNodeId ? (
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-md bg-blue-600 grid place-items-center text-white shrink-0"><Icon name="MapPin" size={13}/></div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[12.5px] font-semibold text-slate-900">{mapNodes.find(n=>n.id===selectedNodeId)?.label}</span>
+                    <span className="text-[10px] font-semibold px-1.5 py-px rounded bg-blue-50 text-blue-600">{selectedNodeId}</span>
+                  </div>
+                  <div className="text-[10.5px] text-slate-500 tnum">
+                    X{mapNodes.find(n=>n.id===selectedNodeId)?.x} · Y{mapNodes.find(n=>n.id===selectedNodeId)?.y}
+                  </div>
+                </div>
+                <button onClick={()=>{setSelectedNodeId(null);setMoveTarget("");}} className="w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500 shrink-0"><Icon name="X" size={13}/></button>
+              </div>
+            ) : sel ? (
+              <div className="flex items-center gap-2">
+                <div className="w-7 h-7 rounded-md grid place-items-center text-white shrink-0" style={{background:fleets.find(f=>f.id===sel.fleet)?.color||"#64748b"}}><Icon name={sel.id.startsWith("ARM")?"Cog":"Bot"} size={13}/></div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[12.5px] font-semibold text-slate-900 tnum">{sel.id}</span>
+                    <span className="text-[10px] font-semibold px-1.5 py-px rounded flex items-center gap-1" style={{background:statusMap[sel.st].bg,color:statusMap[sel.st].fg}}><span className="w-1.5 h-1.5 rounded-full" style={{background:statusMap[sel.st].color}}/>{statusMap[sel.st].label}</span>
+                  </div>
+                  <div className="text-[10.5px] text-slate-500 tnum">배터리 {sel.battery}% · X{sel.x} Y{sel.y}</div>
+                </div>
+                <button onClick={()=>setFocusRobot(null)} className="w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500 shrink-0"><Icon name="X" size={13}/></button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-2 text-[11.5px] text-slate-500"><Icon name="MousePointerClick" size={12}/><span>맵에서 로봇을 클릭하여 대상 선택</span></div>
+            )}
+          </div>
+          {/* Tab body */}
+          <div className="flex-1 overflow-y-auto">
+            {cmdTab==="command" ? (
+              <div className="p-3 space-y-2.5">
+                <CmdSection icon="Send" tone="blue" title="즉시 오더 발행" subtitle="대상 로봇에 레시피를 디스패치">
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                    <CmdSelectField label="Fleet">{fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</CmdSelectField>
+                    <CmdSelectField label="로봇">{robots.filter(r=>r.fleet===(sel?.fleet||"amr")).map(r=><option key={r.id} value={r.id}>{r.id}</option>)}</CmdSelectField>
+                  </div>
+                  <CmdSelectField label="레시피"><option value="">레시피 선택</option>{recipes.filter(r=>r.status==="published").map(r=><option key={r.id} value={r.id}>{r.name}·{recipeDuration(r)}분</option>)}</CmdSelectField>
+                  <div className="flex items-center gap-1.5 mt-2">{["P1·긴급","P2·표준","P3·낮음"].map((p,i)=><button key={p} className={"flex-1 h-6 rounded text-[10.5px] font-medium border "+(i===1?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 bg-white text-slate-600")}>{p}</button>)}</div>
+                  <button className="w-full h-8 mt-2 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12px] font-medium flex items-center justify-center gap-1.5"><Icon name="Send" size={12}/> {sel?sel.id+"에 발행":"발행"}</button>
+                </CmdSection>
+                <CmdSection icon="Square" tone="rose" title="즉시 오더 중지" subtitle="진행 중인 작업을 안전하게 종료">
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                    <CmdSelectField label="Fleet">{fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</CmdSelectField>
+                    <CmdSelectField label="로봇">{robots.filter(r=>r.status==="run"&&r.task).map(r=><option key={r.id} value={r.id}>{r.id}</option>)}</CmdSelectField>
+                  </div>
+                  <div className="flex items-center gap-1.5">{["정상 종료","즉시 정지"].map((m,i)=><button key={m} className={"flex-1 h-6 rounded text-[10.5px] font-medium border "+(i===0?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 bg-white text-slate-600")}>{m}</button>)}</div>
+                  <button className="w-full h-8 mt-2 rounded-md bg-rose-600 hover:bg-rose-700 text-white text-[12px] font-medium flex items-center justify-center gap-1.5"><Icon name="Square" size={12}/> 정상 종료</button>
+                </CmdSection>
+                <CmdSection icon="Navigation" tone="indigo" title="이동 명령" subtitle="대상 스테이션으로 즉시 이동">
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                    <CmdSelectField label="Fleet">{fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</CmdSelectField>
+                    <CmdSelectField label="로봇">{robots.map(r=><option key={r.id} value={r.id}>{r.id}</option>)}</CmdSelectField>
+                  </div>
+                  <div className="relative">
+                    {moveTarget && <span className="absolute left-2 top-1/2 -translate-y-1/2 text-[9.5px] font-medium text-slate-400 uppercase tracking-wide pointer-events-none">목적지</span>}
+                    <select value={moveTarget} onChange={e=>setMoveTarget(e.target.value)}
+                      className={"w-full h-7 rounded-md border bg-white text-[11.5px] outline-none appearance-none pr-6 focus:border-blue-400 "+(moveTarget?"pl-10 border-blue-400 text-blue-700 font-medium":"pl-2.5 border-slate-200 text-slate-800")}>
+                      <option value="">목적지 선택 (맵 노드 클릭)</option>
+                      {mapNodes.map(n=><option key={n.id} value={n.id}>{n.label}</option>)}
+                    </select>
+                    <Icon name="ChevronDown" size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                    {moveTarget && (
+                      <button onClick={()=>setMoveTarget("")}
+                        className="absolute right-5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                        <Icon name="X" size={10}/>
+                      </button>
+                    )}
+                  </div>
+                  {moveTarget && (
+                    <div className="mt-1.5 flex items-center gap-1.5 text-[10.5px] text-blue-600 bg-blue-50 rounded px-2 py-1">
+                      <Icon name="MapPin" size={10}/>
+                      <span>노드 선택됨: <strong>{mapNodes.find(n=>n.id===moveTarget)?.label}</strong></span>
+                    </div>
+                  )}
+                  <button className="w-full h-8 mt-2 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-medium flex items-center justify-center gap-1.5"><Icon name="Navigation" size={12}/> 이동 시작</button>
+                </CmdSection>
+                <CmdSection icon="BatteryCharging" tone="emerald" title="충전 명령" subtitle="충전 스테이션으로 복귀">
+                  <div className="grid grid-cols-2 gap-1.5 mb-2">
+                    <CmdSelectField label="Fleet">{fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}</CmdSelectField>
+                    <CmdSelectField label="로봇">{robots.map(r=><option key={r.id} value={r.id}>{r.id}</option>)}</CmdSelectField>
+                  </div>
+                  <CmdSelectField label="충전소"><option value="auto">자동 선택 (최단경로)</option>{stations.filter(s=>s.type==="charge").map(s=><option key={s.code} value={s.code}>{s.name}</option>)}</CmdSelectField>
+                  {sel&&<div className="mt-2 flex items-center gap-2 text-[10.5px] text-slate-500"><span>{sel.id} 배터리</span><div className="flex-1 h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width:sel.battery+"%",background:sel.battery>50?"#10b981":sel.battery>25?"#f59e0b":"#e11d48"}}/></div><span className="tnum font-medium text-slate-700">{sel.battery}%</span></div>}
+                  <button className="w-full h-8 mt-2 rounded-md bg-emerald-600 hover:bg-emerald-700 text-white text-[12px] font-medium flex items-center justify-center gap-1.5"><Icon name="BatteryCharging" size={12}/> 충전 시작</button>
+                </CmdSection>
+              </div>
+            ) : (
+              <div className="p-3 space-y-3">
+                {/* Node selected */}
+                {selectedNodeId && (() => {
+                  const node = mapNodes.find(n=>n.id===selectedNodeId);
+                  if (!node) return null;
+                  const connectedEdges = [
+                    ["MN-1","MN-2"],["MN-2","MN-3"],["MN-3","MN-4"],["MN-4","MN-5"],["MN-5","MN-6"],
+                    ["MN-5","MN-7"],["MN-6","MN-8"],["MN-7","MN-8"],
+                    ["MN-9","MN-10"],["MN-1","MN-9"],["MN-11","MN-12"],["MN-4","MN-11"],
+                  ].filter(([a,b])=>a===node.id||b===node.id);
+                  const connectedNodes = connectedEdges.map(([a,b])=>a===node.id?b:a)
+                    .map(id=>mapNodes.find(n=>n.id===id)).filter(Boolean);
+                  return (
+                    <div className="space-y-3">
+                      <div className="rounded-md border border-blue-200 bg-blue-50/60 p-2.5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-5 h-5 rounded bg-blue-600 grid place-items-center"><Icon name="MapPin" size={11} className="text-white"/></div>
+                          <div><div className="text-[12.5px] font-semibold text-blue-900">{node.label}</div><div className="text-[10px] text-blue-600 tnum">{node.id}</div></div>
+                          <button onClick={()=>setSelectedNodeId(null)} className="ml-auto w-6 h-6 grid place-items-center rounded hover:bg-blue-100 text-blue-500"><Icon name="X" size={11}/></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
+                          <div><div className="text-[10px] text-blue-500">위치 X</div><div className="font-medium text-blue-900 tnum">{node.x}</div></div>
+                          <div><div className="text-[10px] text-blue-500">위치 Y</div><div className="font-medium text-blue-900 tnum">{node.y}</div></div>
+                          <div className="col-span-2"><div className="text-[10px] text-blue-500 mb-0.5">지원 Fleet</div><div className="flex gap-1">{node.fleets.map(fId=>{const f=fleets.find(fl=>fl.id===fId);return <span key={fId} className="px-1.5 py-px rounded text-[10px] font-medium text-white" style={{background:f?.color||"#64748b"}}>{f?.name||fId}</span>;})}
+                          </div></div>
+                        </div>
+                      </div>
+                      <div className="rounded-md border border-slate-200 p-2.5">
+                        <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">연결된 노드 ({connectedNodes.length})</div>
+                        <div className="space-y-1">
+                          {connectedNodes.map(cn=>(
+                            <button key={cn.id} onClick={()=>{setSelectedNodeId(cn.id);setMoveTarget(cn.id);}}
+                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 text-left group">
+                              <div className="w-2 h-2 rounded-sm bg-slate-400 group-hover:bg-blue-500 shrink-0"/>
+                              <span className="text-[11.5px] text-slate-700 flex-1">{cn.label}</span>
+                              <span className="text-[10px] text-slate-400 tnum">{cn.id}</span>
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <button onClick={()=>{setCmdTab("command");}}
+                        className="w-full h-8 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-medium flex items-center justify-center gap-1.5">
+                        <Icon name="Navigation" size={12}/> 이 노드로 이동 명령
+                      </button>
+                    </div>
+                  );
+                })()}
+                {/* Robot selected */}
+                {!selectedNodeId && (!sel ? (
+                  <div className="p-6 text-center"><div className="w-10 h-10 mx-auto rounded-full bg-slate-50 grid place-items-center mb-2"><Icon name="Info" size={16} className="text-slate-400"/></div><div className="text-[12.5px] font-medium text-slate-700">로봇 선택 안 됨</div><div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">맵에서 로봇을 클릭하면<br/>오더 현황 및 속성이 표시됩니다.</div></div>
+                ) : (<>
+                  <div className="rounded-md border border-slate-200 p-2.5">
+                    <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">Specification</div>
+                    <div className="grid grid-cols-2 gap-x-3 gap-y-1.5">
+                      {[["모델",sel.id.startsWith("AMR")?"MiR250":sel.id.startsWith("AGV")?"RXC-3000":"UR10e"],["Fleet",fleets.find(f=>f.id===sel.fleet)?.name],["펌웨어","v3.14.2"],["IP","10.42.1."+(40+parseInt(sel.id.slice(-2)||0))],["배터리",sel.battery+"%"],["가동시간","14h 22m"]].map(([l,v])=>(
+                        <div key={l}><div className="text-[10px] text-slate-500">{l}</div><div className="text-[12px] font-medium text-slate-900 truncate tnum">{v}</div></div>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="rounded-md border border-slate-200 p-2.5">
+                    <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">현재 수행</div>
+                    {sel.task?<><div className="text-[12.5px] font-semibold text-slate-900">{sel.recipe}</div><div className="mt-2"><div className="flex items-center justify-between text-[10.5px] mb-1"><span className="text-slate-500">진행률</span><span className="font-semibold tnum text-slate-900">{sel.progress}%</span></div><div className="h-1.5 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-blue-500" style={{width:sel.progress+"%"}}/></div></div></>:<div className="text-[11.5px] text-slate-500 italic">할당된 작업 없음</div>}
+                  </div>
+                  <div className="rounded-md border border-slate-200 overflow-hidden">
+                    <div className="px-2.5 py-2 border-b border-slate-200"><div className="text-[12px] font-semibold text-slate-900">오더 현황</div></div>
+                    <div className="divide-y divide-slate-100">
+                      {initOrders.filter(o=>o.robotId===sel.id).slice(0,4).map(o=>{
+                        const r=recipes.find(rr=>rr.id===o.recipeId),dur=r?recipeDuration(r):0;
+                        const sc={done:{label:"완료",color:"#94a3b8",bg:"#f1f5f9"},running:{label:"진행중",color:"#2563eb",bg:"#dbeafe"},queued:{label:"예약",color:"#d97706",bg:"#fef3c7"},error:{label:"실패",color:"#e11d48",bg:"#ffe4e6"}}[o.status];
+                        return <div key={o.id} className="px-2.5 py-2 hover:bg-slate-50/50"><div className="flex items-center gap-1.5 mb-0.5"><span className="w-1 h-3 rounded-sm" style={{background:sc.color}}/><span className="text-[11.5px] font-medium text-slate-900 truncate flex-1">{r?.name||o.recipeId}</span><span className="text-[9.5px] font-semibold px-1.5 py-px rounded tnum" style={{background:sc.bg,color:sc.color}}>{sc.label}</span></div><div className="flex items-center gap-1.5 text-[10px] text-slate-500 tnum pl-2.5"><Icon name="Clock" size={9}/>{fmtTime(o.start)}—{fmtTime(o.start+dur)}</div></div>;
+                      })}
+                      {initOrders.filter(o=>o.robotId===sel.id).length===0&&<div className="px-3 py-4 text-center text-[11.5px] text-slate-400 italic">할당된 오더가 없습니다.</div>}
+                    </div>
+                  </div>
+                </>))}
+              </div>
+            )}
+          </div>
+        </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   ANALYTICS
+══════════════════════════════════════════ */
+function BarChart({ data }) {
+  const w=560,h=180,pad={l:24,r:8,t:8,b:20},max=Math.max(...data.map(d=>d[1])),bw=(w-pad.l-pad.r)/data.length;
+  return <svg viewBox={`0 0 ${w} ${h}`} className="w-full" style={{height:180}}>
+    {[0,.5,1].map((t,i)=>{const y=pad.t+(1-t)*(h-pad.t-pad.b);return <g key={i}><line x1={pad.l} y1={y} x2={w-pad.r} y2={y} stroke="#e2e8f0" strokeDasharray="2 2"/><text x={pad.l-4} y={y+3} textAnchor="end" fill="#94a3b8" fontSize={9}>{Math.round(t*max)}</text></g>;})}
+    {data.map(([l,v],i)=>{const x=pad.l+i*bw+bw*.15,bh=(v/max)*(h-pad.t-pad.b),y=h-pad.b-bh;return <g key={l}><rect x={x} y={y} width={bw*.7} height={bh} fill="#2563eb" rx="2"/><text x={x+bw*.35} y={h-pad.b+12} textAnchor="middle" fill="#94a3b8" fontSize={8}>{l}</text></g>;})}
+  </svg>;
+}
+function AnalyticsView() {
+  return (
+    <div className="h-full overflow-auto p-6 bg-slate-50">
+      <div className="flex items-end justify-between mb-5">
+        <div><h1 className="text-[20px] font-semibold text-slate-900">분석 대시보드</h1><p className="text-[12.5px] text-slate-500 mt-0.5">가동률 · 처리량 · 사이클 타임 추이</p></div>
+        <div className="flex items-center bg-white border border-slate-200 rounded-md p-0.5">{["오늘","주","월","분기"].map((v,i)=><button key={v} className={"h-7 px-3 rounded text-[12px] font-medium "+(i===1?"bg-slate-100 text-slate-900":"text-slate-500")}>{v}</button>)}</div>
+      </div>
+      <div className="grid grid-cols-4 gap-3 mb-4">
+        <KpiCard label="가동률" value="78.4%" trend="+3.2%" icon="Gauge" tone="emerald"/>
+        <KpiCard label="작업 완료율" value="94.1%" trend="+1.1%" icon="CheckCircle2" tone="emerald"/>
+        <KpiCard label="평균 사이클" value="8.2분" trend="-0.4m" icon="Timer" tone="blue"/>
+        <KpiCard label="오류율" value="1.8%" trend="+0.3%" icon="AlertTriangle" tone="rose"/>
+      </div>
+      <div className="grid gap-4 mb-4" style={{gridTemplateColumns:"1.5fr 1fr"}}>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="h-11 px-4 border-b border-slate-200 flex items-center"><div className="text-[13px] font-semibold text-slate-900">시간대별 처리량</div><span className="ml-2 text-[10.5px] text-slate-500">단위: 작업</span></div>
+          <div className="p-4"><BarChart data={[["06",12],["07",24],["08",38],["09",52],["10",64],["11",71],["12",48],["13",66],["14",72],["15",78],["16",64],["17",42],["18",28],["19",18]]}/></div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="h-11 px-4 border-b border-slate-200 flex items-center"><div className="text-[13px] font-semibold text-slate-900">Fleet 별 가동률</div></div>
+          <div className="p-4 space-y-3">
+            {[{label:"AMR",value:82,color:"#2563eb"},{label:"AGV",value:71,color:"#0ea5e9"},{label:"ARM",value:88,color:"#7c3aed"},{label:"SEMI-x",value:76,color:"#16a34a"}].map(s=>(
+              <div key={s.label}><div className="flex items-center justify-between text-[12px] mb-1"><span className="text-slate-700 font-medium">{s.label}</span><span className="font-semibold tnum text-slate-900">{s.value}%</span></div><div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width:s.value+"%",background:s.color}}/></div></div>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div className="grid gap-4" style={{gridTemplateColumns:"1fr 1fr"}}>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <div className="h-11 px-4 border-b border-slate-200 flex items-center"><div className="text-[13px] font-semibold text-slate-900">레시피 별 호출 빈도</div><span className="ml-2 text-[10.5px] text-slate-500">이번 주 Top 5</span></div>
+          <div className="p-4 space-y-2.5">
+            {[{label:"A동→B동 자재이송",value:84},{label:"QC 라인 검수 순회",value:62},{label:"AGV 라인 보충",value:48},{label:"충전 스테이션 복귀",value:36},{label:"팔레트 적재 시퀀스",value:22}].map(it=>(
+              <div key={it.label}><div className="flex items-center justify-between text-[12px] mb-1"><span className="text-slate-700">{it.label}</span><span className="text-slate-500 tnum">{it.value}</span></div><div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full bg-blue-500" style={{width:(it.value/84*100)+"%"}}/></div></div>
+            ))}
+          </div>
+        </div>
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm p-4">
+          <div className="text-[13px] font-semibold text-slate-900 mb-4">로봇 상태 분포</div>
+          <div className="space-y-2.5">
+            {statuses.map(s=>{const c=robots.filter(r=>r.status===s.id).length,pct=Math.round(c/robots.length*100);return(
+              <div key={s.id}><div className="flex items-center justify-between text-[12px] mb-1"><div className="flex items-center gap-2"><span className="w-2 h-2 rounded-full" style={{background:s.color}}/><span className="text-slate-700">{s.label}</span></div><span className="tnum font-medium text-slate-900">{c}대 ({pct}%)</span></div><div className="h-2 bg-slate-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{width:pct+"%",background:s.color}}/></div></div>
+            );})}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   BASIS VIEW
+══════════════════════════════════════════ */
+function BasisView() {
+  const tabs=["스테이션","Fleet · 로봇","Action 마스터","안전 영역","경로 그래프"];
+  const [tab,setTab]=useState(0);
+  return (
+    <div className="h-full overflow-auto p-6 bg-slate-50">
+      <div className="flex items-end justify-between mb-4">
+        <div><h1 className="text-[20px] font-semibold text-slate-900">기준 관리 정보</h1><p className="text-[12.5px] text-slate-500 mt-0.5">맵, 스테이션, Fleet 등 시스템의 기준 데이터를 관리합니다.</p></div>
+        <button className="h-9 px-3.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-medium flex items-center gap-1.5"><Icon name="Plus" size={13}/> 스테이션 추가</button>
+      </div>
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="h-11 px-3 border-b border-slate-200 flex items-center gap-1">
+          {tabs.map((t,i)=><button key={t} onClick={()=>setTab(i)} className={"h-8 px-3 rounded text-[12.5px] font-medium "+(tab===i?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-50")}>{t}</button>)}
+        </div>
+        <table className="w-full text-[12.5px]">
+          <thead><tr className="text-left text-[11.5px] text-slate-500 border-b border-slate-200"><th className="font-medium px-4 py-2.5">코드</th><th className="font-medium py-2.5">이름</th><th className="font-medium py-2.5">Zone</th><th className="font-medium py-2.5">유형</th><th className="font-medium py-2.5">좌표</th><th className="font-medium py-2.5">상태</th><th className="font-medium py-2.5"></th></tr></thead>
+          <tbody>
+            {stations.map(s=>(
+              <tr key={s.code} className="border-b border-slate-100 hover:bg-slate-50/50">
+                <td className="px-4 py-3 font-mono text-[11.5px] text-slate-900">{s.code}</td>
+                <td className="py-3 font-medium text-slate-900">{s.name}</td>
+                <td className="py-3 text-slate-700">{s.zone}</td>
+                <td className="py-3"><span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[11px]">{s.type}</span></td>
+                <td className="py-3 tnum text-slate-600">{s.x.toFixed(1)}, {s.y.toFixed(1)}</td>
+                <td className="py-3"><span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/> 활성</span></td>
+                <td className="py-3 pr-4"><button className="w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500"><Icon name="MoreHorizontal" size={13}/></button></td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   RECIPE VIEW
+══════════════════════════════════════════ */
+function RecipeView() {
+  const [mode,setMode]=useState("list");
+  const [editId,setEditId]=useState(null);
+  if (mode==="builder") return <RecipeBuilder recipeId={editId} onBack={()=>setMode("list")}/>;
+  return (
+    <div className="h-full overflow-auto p-6">
+      <div className="flex items-end justify-between mb-5">
+        <div><h1 className="text-[20px] font-semibold text-slate-900">레시피 생성</h1><p className="text-[12.5px] text-slate-500 mt-0.5">Fleet 별 작업 시퀀스를 정의하고 스케줄러에서 디스패치합니다.</p></div>
+        <button onClick={()=>{setEditId(null);setMode("builder");}} className="h-9 px-3.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-medium flex items-center gap-1.5 shadow-sm"><Icon name="Plus" size={14}/> 새 레시피 생성</button>
+      </div>
+      <div className="grid grid-cols-4 gap-3 mb-5">
+        {[{label:"전체 레시피",value:recipes.length,icon:"Workflow",cl:"text-blue-500"},{label:"퍼블리시드",value:recipes.filter(r=>r.status==="published").length,icon:"CheckCircle2",cl:"text-emerald-500"},{label:"초안",value:recipes.filter(r=>r.status==="draft").length,icon:"FilePen",cl:"text-amber-500"},{label:"오늘 디스패치",value:47,icon:"Send",cl:"text-slate-400"}].map((s,i)=>(
+          <div key={i} className="bg-white border border-slate-200 rounded-lg p-3.5 shadow-sm"><div className="flex items-center justify-between"><span className="text-[11.5px] text-slate-500">{s.label}</span><Icon name={s.icon} size={14} className={s.cl}/></div><div className="text-[24px] font-semibold text-slate-900 tnum mt-1">{s.value}</div></div>
+        ))}
+      </div>
+      <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+        <div className="h-11 px-4 flex items-center border-b border-slate-200 bg-slate-50/60">
+          <div className="flex items-center gap-1.5 text-[12.5px] font-medium text-slate-700"><Icon name="ListFilter" size={13}/> 전체 레시피</div>
+        </div>
+        <table className="w-full text-[12.5px]">
+          <thead><tr className="text-left text-[11.5px] text-slate-500 border-b border-slate-200"><th className="font-medium px-4 py-2.5">레시피 이름</th><th className="font-medium py-2.5">Fleet</th><th className="font-medium py-2.5">단계</th><th className="font-medium py-2.5">소요시간</th><th className="font-medium py-2.5">상태</th><th className="font-medium py-2.5"></th></tr></thead>
+          <tbody>
+            {recipes.map(r=>{const fm=fleetMeta(r.fleet),dur=recipeDuration(r);return(
+              <tr key={r.id} className="border-b border-slate-100 hover:bg-slate-50/50 group">
+                <td className="px-4 py-3"><button onClick={()=>{setEditId(r.id);setMode("builder");}} className="font-medium text-slate-900 hover:text-blue-600 text-left">{r.name}</button><div className="text-[11px] text-slate-400 tnum">{r.id}</div></td>
+                <td className="py-3"><span className="inline-flex items-center gap-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-700 text-[11.5px]"><span className="w-1.5 h-1.5 rounded-full" style={{background:fm.color}}/>{fm.name}</span></td>
+                <td className="py-3 tnum text-slate-700">{r.steps.length}단계</td>
+                <td className="py-3 tnum text-slate-700">{dur}분</td>
+                <td className="py-3">{r.status==="published"?<span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 text-[11px] font-medium"><span className="w-1.5 h-1.5 rounded-full bg-emerald-500"/> Published</span>:<span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded bg-amber-50 text-amber-700 text-[11px] font-medium"><span className="w-1.5 h-1.5 rounded-full bg-amber-500"/> Draft</span>}</td>
+                <td className="py-3 pr-4"><div className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100"><button onClick={()=>{setEditId(r.id);setMode("builder");}} className="w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500"><Icon name="Pencil" size={13}/></button></div></td>
+              </tr>
+            );})}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function RecipeBuilder({ recipeId, onBack }) {
+  const initial = recipes.find(r=>r.id===recipeId);
+  const [name,setName]=useState(initial?initial.name:"신규 레시피");
+  const [fleet,setFleet]=useState(initial?initial.fleet:"amr");
+  const [nodes,setNodes]=useState(()=>{
+    if(initial&&initial.nodes&&initial.nodes.length>0)return initial.nodes;
+    if(initial)return initial.steps.map((s,i)=>({id:s.nodeId,x:120+(i%4)*160,y:140+Math.floor(i/4)*130,label:"Node "+(i+1)}));
+    return[];
+  });
+  const [steps,setSteps]=useState(()=>initial?[...initial.steps]:[]);
+  const [selIdx,setSelIdx]=useState(steps.length>0?0:null);
+  const mapRef=useRef(null);
+  const [mapMode,setMapMode]=useState("select");
+  const selStep=selIdx!==null?steps[selIdx]:null;
+  const selNode=selStep?nodes.find(n=>n.id===selStep.nodeId):null;
+  const totalDur=steps.reduce((s,st)=>s+(st.duration||0),0);
+  function addStepForNode(node){
+    if(!nodes.find(n=>n.id===node.id))setNodes(p=>[...p,node]);
+    const validActs=actionTypes.filter(a=>a.fleets.includes(fleet));
+    const def=validActs[0]||actionTypes[0];
+    setSteps(p=>{setSelIdx(p.length);return[...p,{nodeId:node.id,actionType:def.id,duration:def.defaultDuration}];});
+  }
+  function removeStep(idx){const nodeId=steps[idx].nodeId;setSteps(p=>p.filter((_,i)=>i!==idx));setNodes(p=>p.filter(n=>n.id!==nodeId));setSelIdx(null);}
+  function updateStep(idx,patch){setSteps(p=>p.map((s,i)=>i===idx?{...s,...patch}:s));}
+  function handleMapClick(e){
+    if(mapMode!=="create")return;
+    const rect=mapRef.current.getBoundingClientRect();
+    const x=Math.round(e.clientX-rect.left),y=Math.round(e.clientY-rect.top);
+    const id="N"+(nodes.length+1);
+    addStepForNode({id,x,y,label:"Custom "+(nodes.length+1)});
+  }
+  return (
+    <div className="h-full flex flex-col">
+      <div className="h-12 px-5 border-b border-slate-200 bg-white flex items-center gap-3">
+        <button onClick={onBack} className="flex items-center gap-1 text-[12.5px] text-slate-500 hover:text-slate-900"><Icon name="ArrowLeft" size={13}/> 목록</button>
+        <span className="text-slate-300">/</span>
+        <input value={name} onChange={e=>setName(e.target.value)} className="text-[14px] font-semibold text-slate-900 bg-transparent outline-none focus:bg-slate-50 px-1.5 py-0.5 rounded"/>
+        <div className="ml-auto flex items-center gap-2">
+          <button className="h-8 px-3 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700">초안 저장</button>
+          <button className="h-8 px-3.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-medium flex items-center gap-1.5"><Icon name="Send" size={12}/> 퍼블리시</button>
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 grid" style={{gridTemplateColumns:"260px 1fr"}}>
+        <div className="border-r border-slate-200 bg-white overflow-y-auto">
+          <div className="p-4 border-b border-slate-200">
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-2">대상 Fleet</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {fleets.map(f=><button key={f.id} onClick={()=>setFleet(f.id)} className={"h-8 rounded-md text-[11.5px] font-medium border "+(fleet===f.id?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>{f.name}</button>)}
+            </div>
+          </div>
+          <div className="p-4 border-b border-slate-200">
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-2">선택된 노드</div>
+            {!selNode?<div className="rounded-md bg-slate-50 border border-dashed border-slate-200 p-3 text-center"><Icon name="MousePointerClick" size={16} className="text-slate-400 mx-auto mb-1"/><p className="text-[11.5px] text-slate-500">맵에서 노드를 클릭하여<br/>단계로 추가하세요</p></div>:(
+              <div className="rounded-md border border-slate-200 bg-slate-50/40 p-3">
+                <div className="flex items-center gap-2"><div className="w-7 h-7 rounded-full bg-blue-600 text-white grid place-items-center text-[11px] font-semibold">{selIdx+1}</div><div><div className="text-[12.5px] font-medium text-slate-900">{selNode.label}</div></div></div>
+                <input value={selNode.label} onChange={e=>setNodes(p=>p.map(n=>n.id===selNode.id?{...n,label:e.target.value}:n))} className="mt-2 w-full h-7 px-2 rounded border border-slate-200 bg-white text-[11.5px] outline-none focus:border-blue-400"/>
+              </div>
+            )}
+          </div>
+          <div className="p-4">
+            <div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-2">Action Type</div>
+            <div className="grid grid-cols-2 gap-1.5">
+              {actionTypes.filter(a=>a.fleets.includes(fleet)).map(a=>{const isA=selStep&&selStep.actionType===a.id;return(
+                <button key={a.id} disabled={!selStep} onClick={()=>updateStep(selIdx,{actionType:a.id,duration:a.defaultDuration})}
+                  className={"h-14 rounded-md border flex flex-col items-center justify-center gap-1 transition "+(!selStep?"opacity-40 cursor-not-allowed border-slate-200 ":"")+(isA?"border-blue-500 bg-blue-50":"border-slate-200 bg-white hover:bg-slate-50")}>
+                  <Icon name={a.icon} size={15} style={{color:a.color}}/><span className="text-[10.5px] font-medium text-slate-700">{a.label}</span>
+                </button>
+              );})}
+            </div>
+            {selStep&&<div className="mt-4"><div className="text-[11px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">소요 시간 (분)</div><div className="flex items-center gap-2"><input type="range" min="1" max="60" value={selStep.duration} onChange={e=>updateStep(selIdx,{duration:+e.target.value})} className="flex-1 accent-blue-600"/><div className="w-12 h-7 rounded border border-slate-200 bg-white text-[12px] font-medium grid place-items-center tnum">{selStep.duration}m</div></div></div>}
+          </div>
+        </div>
+        <div className="min-w-0 flex flex-col">
+          <div className="relative flex-1 min-h-0 overflow-hidden bg-slate-50">
+            <div className="absolute top-3 left-3 z-10 flex items-center gap-1 bg-white rounded-md border border-slate-200 shadow-sm p-1">
+              <button onClick={()=>setMapMode("select")} className={"h-7 px-2 rounded text-[11.5px] font-medium flex items-center gap-1 "+(mapMode==="select"?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-100")}><Icon name="MousePointer2" size={12}/> 선택</button>
+              <button onClick={()=>setMapMode("create")} className={"h-7 px-2 rounded text-[11.5px] font-medium flex items-center gap-1 "+(mapMode==="create"?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-100")}><Icon name="Plus" size={12}/> 새 노드</button>
+            </div>
+            <div ref={mapRef} onClick={handleMapClick} className={"absolute inset-0 grid-bg "+(mapMode==="create"?"cursor-crosshair":"cursor-default")}>
+              <div className="absolute top-10 left-10 w-72 h-40 rounded border border-blue-200 bg-blue-50/30 pointer-events-none"><div className="absolute top-1 left-2 text-[10px] font-medium text-blue-700/70 uppercase">Zone A · Loading</div></div>
+              <div className="absolute top-52 left-96 w-80 h-44 rounded border border-emerald-200 bg-emerald-50/30 pointer-events-none"><div className="absolute top-1 left-2 text-[10px] font-medium text-emerald-700/70 uppercase">Zone B · Drop-off</div></div>
+              {mapNodes.filter(mn=>mn.fleets.includes(fleet)&&!nodes.find(n=>n.id===mn.id)).map(mn=>(
+                <button key={mn.id} onClick={e=>{e.stopPropagation();addStepForNode({...mn});}} className="absolute -translate-x-1/2 -translate-y-1/2 group" style={{left:mn.x,top:mn.y}} title={mn.label}>
+                  <div className="w-7 h-7 rounded-full border-2 border-dashed border-slate-300 bg-white/70 grid place-items-center group-hover:border-blue-500 group-hover:bg-blue-50 group-hover:scale-110 transition"><Icon name="Plus" size={11} className="text-slate-400 group-hover:text-blue-600"/></div>
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-0.5 text-[9.5px] text-slate-500 group-hover:text-blue-700 whitespace-nowrap font-medium">{mn.label}</div>
+                </button>
+              ))}
+              <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{overflow:"visible"}}>
+                {steps.map((s,i)=>{if(i===0)return null;const a=nodes.find(n=>n.id===steps[i-1].nodeId),b=nodes.find(n=>n.id===s.nodeId);if(!a||!b)return null;const mx=(a.x+b.x)/2,my=(a.y+b.y)/2-20;return <g key={i}><path d={`M ${a.x} ${a.y} Q ${mx} ${my} ${b.x} ${b.y}`} fill="none" stroke="#2563eb" strokeWidth="1.5" strokeDasharray="4 3" opacity="0.7"/><polygon points={`${b.x},${b.y} ${b.x-8},${b.y-4} ${b.x-8},${b.y+4}`} fill="#2563eb" opacity="0.7"/></g>;})}
+              </svg>
+              {nodes.map((n,i)=>{const sIdx=steps.findIndex(s=>s.nodeId===n.id);const act=sIdx>=0?actMeta(steps[sIdx].actionType):actMeta("MOVE");const isSel=sIdx===selIdx;return(
+                <div key={n.id} onClick={e=>{e.stopPropagation();setSelIdx(sIdx);}} className="absolute -translate-x-1/2 -translate-y-1/2 cursor-pointer" style={{left:n.x,top:n.y}}>
+                  {isSel&&<div className="absolute w-9 h-9 rounded-full pulse-ring border-2" style={{borderColor:act.color,left:-18,top:-18}}/>}
+                  <div className={"w-9 h-9 rounded-full grid place-items-center shadow-md border-2 "+(isSel?"scale-110":"")} style={{background:"#fff",borderColor:act.color}}><Icon name={act.icon} size={14} style={{color:act.color}}/></div>
+                  <div className="absolute top-full left-1/2 -translate-x-1/2 mt-1 whitespace-nowrap"><div className="text-[10.5px] font-semibold text-slate-900 tnum">{sIdx+1}. {n.label}</div><div className="text-[10px] text-slate-500 text-center">{act.label}</div></div>
+                </div>
+              );})}
+            </div>
+          </div>
+          <div className="h-36 border-t border-slate-200 bg-white px-5 py-3 overflow-hidden">
+            <div className="flex items-center gap-1.5 text-[12px] font-medium text-slate-700 mb-2.5"><Icon name="GitBranch" size={13}/> Flow 시퀀스 <span className="text-slate-400 font-normal">· {steps.length}단계 · 총 {totalDur}분</span></div>
+            <div className="overflow-x-auto">
+              <div className="flex items-center gap-1.5 pb-2 min-w-min">
+                {steps.length===0&&<div className="text-[12px] text-slate-400 italic">노드를 클릭하여 단계를 추가하세요</div>}
+                {steps.map((s,i)=>{const act=actMeta(s.actionType),node=nodes.find(n=>n.id===s.nodeId),isSel=i===selIdx;return(
+                  <React.Fragment key={i}>
+                    <div onClick={()=>setSelIdx(i)} className={"shrink-0 w-36 rounded-lg border bg-white p-2.5 cursor-pointer "+(isSel?"border-blue-500 ring-2 ring-blue-100":"border-slate-200 hover:border-slate-300")}>
+                      <div className="flex items-center gap-1 mb-1.5"><span className="text-[10.5px] font-semibold text-slate-400 tnum">#{i+1}</span><span className="text-[11px] font-medium text-slate-900 truncate ml-1">{node?.label||s.nodeId}</span></div>
+                      <div className="flex items-center gap-1.5"><div className="w-6 h-6 rounded grid place-items-center" style={{background:act.color+"15"}}><Icon name={act.icon} size={12} style={{color:act.color}}/></div><div><div className="text-[11.5px] font-medium text-slate-800">{act.label}</div><div className="text-[10.5px] text-slate-500 tnum">{s.duration}분</div></div></div>
+                    </div>
+                    {i<steps.length-1&&<Icon name="ChevronRight" size={14} className="shrink-0 text-slate-300"/>}
+                  </React.Fragment>
+                );})}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   SCHEDULER (GANTT)
+══════════════════════════════════════════ */
+const GANTT = { startHour:6, endHour:20, pxPerMin:2.4, rowH:56, BUFFER:5 };
+const GW = (GANTT.endHour-GANTT.startHour)*60*GANTT.pxPerMin;
+const RCOL = 168;
+const SC = {
+  done:   {bg:"bg-slate-100",border:"border-slate-300",fg:"text-slate-700",label:"완료",chip:"#94a3b8"},
+  running:{bg:"bg-blue-100", border:"border-blue-400", fg:"text-blue-900", label:"진행중",chip:"#2563eb"},
+  queued: {bg:"bg-amber-50", border:"border-amber-300",fg:"text-amber-900",label:"예약",chip:"#d97706"},
+  error:  {bg:"bg-rose-100", border:"border-rose-400", fg:"text-rose-900", label:"실패",chip:"#e11d48"},
+};
+
+function computePlacement(allOrders, robotId, desiredStart, duration, ignoreId) {
+  const row = allOrders.filter(o=>o.robotId===robotId&&o.id!==ignoreId);
+  let start=desiredStart, safety=0, conflict=false;
+  while(safety++<100){
+    const end=start+duration;
+    const blocker=row.find(o=>{const dur=recipeDuration(recipes.find(r=>r.id===o.recipeId));const os=o.start-GANTT.BUFFER,oe=o.start+dur+GANTT.BUFFER;return start<oe&&end>os;});
+    if(!blocker)break;
+    conflict=true;
+    const dur=recipeDuration(recipes.find(r=>r.id===blocker.recipeId));
+    start=blocker.start+dur+GANTT.BUFFER;
+  }
+  return {start,conflict};
+}
+
+function MultiFleetDropdown({ value, onChange, counts }) {
+  const [open, setOpen] = useState(false);
+  const allSelected = value.size === 0;
+  const toggle = id => {
+    const n = new Set(value);
+    n.has(id) ? n.delete(id) : n.add(id);
+    onChange(n);
+  };
+  const label = allSelected
+    ? "전체 Fleet"
+    : value.size === 1
+      ? fleets.find(f => f.id === [...value][0])?.name
+      : `${value.size}개 Fleet`;
+
+  return (
+    <div className="relative flex-1 min-w-0">
+      <button
+        onClick={() => setOpen(o => !o)}
+        className={"h-7 w-full pl-2 pr-1.5 rounded-md border bg-white flex items-center gap-1.5 text-[11.5px] font-medium transition " + (open ? "border-blue-400 ring-2 ring-blue-100" : "border-slate-200 hover:border-slate-300")}
+      >
+        {/* colored dots for selected fleets */}
+        {allSelected
+          ? <span className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"/>
+          : <div className="flex items-center gap-0.5 shrink-0">
+              {[...value].map(id => {
+                const f = fleets.find(f => f.id === id);
+                return <span key={id} className="w-1.5 h-1.5 rounded-full" style={{background: f?.color}}/>;
+              })}
+            </div>
+        }
+        <span className="text-slate-800 truncate">{label}</span>
+        <Icon name="ChevronDown" size={11} className={"ml-auto text-slate-400 shrink-0 transition-transform " + (open ? "rotate-180" : "")}/>
+      </button>
+
+      {open && (
+        <>
+          <div className="fixed inset-0 z-10" onClick={() => setOpen(false)}/>
+          <div className="absolute z-20 top-full mt-1 left-0 w-[188px] bg-white rounded-lg shadow-xl border border-slate-200 py-1.5 overflow-hidden">
+            {/* 전체 선택 */}
+            <button
+              onClick={() => { onChange(new Set()); setOpen(false); }}
+              className={"w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-slate-50 " + (allSelected ? "bg-blue-50" : "")}
+            >
+              <div className={"w-4 h-4 rounded border-2 grid place-items-center shrink-0 " + (allSelected ? "border-blue-500 bg-blue-500" : "border-slate-300")}>
+                {allSelected && <Icon name="Check" size={10} className="text-white"/>}
+              </div>
+              <span className={"text-[12px] flex-1 " + (allSelected ? "text-blue-700 font-semibold" : "text-slate-800 font-medium")}>전체 Fleet</span>
+              <span className="text-[10.5px] text-slate-400 tnum">{Object.values(counts).reduce((a,b)=>a+b,0)}</span>
+            </button>
+
+            <div className="h-px bg-slate-100 my-1"/>
+
+            {/* 개별 fleet */}
+            {fleets.map(f => {
+              const on = value.has(f.id);
+              return (
+                <button
+                  key={f.id}
+                  onClick={() => toggle(f.id)}
+                  className={"w-full flex items-center gap-2.5 px-3 py-2 text-left hover:bg-slate-50 " + (on ? "bg-blue-50/60" : "")}
+                >
+                  <div className={"w-4 h-4 rounded border-2 grid place-items-center shrink-0 transition-colors " + (on ? "border-blue-500 bg-blue-500" : "border-slate-300")}>
+                    {on && <Icon name="Check" size={10} className="text-white"/>}
+                  </div>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{background: f.color}}/>
+                  <span className={"text-[12px] flex-1 " + (on ? "text-blue-700 font-medium" : "text-slate-700")}>{f.name}</span>
+                  <span className="text-[10.5px] text-slate-400 tnum">{counts[f.id]}</span>
+                </button>
+              );
+            })}
+
+            {/* 선택 초기화 */}
+            {value.size > 0 && (
+              <>
+                <div className="h-px bg-slate-100 my-1"/>
+                <button
+                  onClick={() => { onChange(new Set()); setOpen(false); }}
+                  className="w-full flex items-center gap-2 px-3 py-1.5 text-[11px] text-slate-400 hover:text-slate-600 hover:bg-slate-50"
+                >
+                  <Icon name="X" size={10}/> 선택 초기화
+                </button>
+              </>
+            )}
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
+function SchedulerView({ initialFocusRecipeId }) {
+  const [orders,setOrders]=useState(initOrders.map(o=>({...o})));
+  const [selOrder,setSelOrder]=useState(null);
+  const [draggingRcp,setDraggingRcp]=useState(null);
+  const [hoverPrev,setHoverPrev]=useState(null);
+  const [libOpen,setLibOpen]=useState(true);
+  const [now,setNow]=useState(11*60+12);
+  const [hlRcp,setHlRcp]=useState(initialFocusRecipeId||null);
+  const [addOpen,setAddOpen]=useState(false);
+  const [fleetF,setFleetF]=useState(new Set());
+  const [libQ,setLibQ]=useState("");
+  const [libFleetF,setLibFleetF]=useState(new Set());
+  const [moving,setMoving]=useState(null);
+  const pressRef=useRef(null);
+  const lastDragRef=useRef(0);
+  const ganttRef=useRef(null);
+  const headRef=useRef(null);
+  const rColRef=useRef(null);
+
+  const allR=robots;
+  const visR=fleetF.size===0?allR:allR.filter(r=>fleetF.has(r.fleet));
+
+  useEffect(()=>{const id=setInterval(()=>setNow(n=>n+1),8000);return()=>clearInterval(id);},[]);
+  useEffect(()=>{
+    const g=ganttRef.current,h=headRef.current;if(!g||!h)return;
+    const fn=()=>{h.scrollLeft=g.scrollLeft;if(rColRef.current)rColRef.current.scrollTop=g.scrollTop;};
+    g.addEventListener("scroll",fn);return()=>g.removeEventListener("scroll",fn);
+  },[]);
+
+  function timeFromX(clientX){
+    const rect=ganttRef.current.getBoundingClientRect();
+    const x=clientX-rect.left+ganttRef.current.scrollLeft;
+    const min=GANTT.startHour*60+x/GANTT.pxPerMin;
+    return Math.max(GANTT.startHour*60,Math.min(GANTT.endHour*60,Math.round(min/5)*5));
+  }
+  function onLibDragStart(e,rId){setDraggingRcp(rId);e.dataTransfer.setData("text/plain",rId);e.dataTransfer.effectAllowed="copy";}
+  function onRowDragOver(e,rId){
+    e.preventDefault();if(!draggingRcp)return;
+    const r=recipes.find(r=>r.id===draggingRcp);if(!r)return;
+    const dur=recipeDuration(r),start=timeFromX(e.clientX);
+    const p=computePlacement(orders,rId,start,dur,null);
+    setHoverPrev({robotId:rId,start:p.start,duration:dur,recipeId:r.id,conflict:p.conflict});
+  }
+  function onRowDrop(e,rId){
+    e.preventDefault();if(!draggingRcp)return;
+    const r=recipes.find(r=>r.id===draggingRcp);if(!r)return;
+    const dur=recipeDuration(r),start=timeFromX(e.clientX);
+    const p=computePlacement(orders,rId,start,dur,null);
+    setOrders(o=>[...o,{id:"ord-"+(1000+o.length),robotId:rId,recipeId:r.id,start:p.start,status:"queued"}]);
+    setDraggingRcp(null);setHoverPrev(null);
+  }
+  function isEditable(o){return o.status==="queued"&&o.start>now;}
+  function copyOrder(o){
+    const r=recipes.find(rr=>rr.id===o.recipeId);if(!r)return;
+    const dur=recipeDuration(r),p=computePlacement(orders,o.robotId,o.start+dur+GANTT.BUFFER,dur,null);
+    setOrders(oo=>[...oo,{id:"ord-"+(1000+oo.length+Math.floor(Math.random()*99)),robotId:o.robotId,recipeId:o.recipeId,start:p.start,status:"queued"}]);
+    setSelOrder(null);
+  }
+  function deleteOrder(o){setOrders(oo=>oo.filter(x=>x.id!==o.id));setSelOrder(null);}
+  function onBlockMouseDown(e,o){
+    if(e.button!==0||!isEditable(o))return;
+    const r=recipes.find(rr=>rr.id===o.recipeId);if(!r)return;
+    const dur=recipeDuration(r);
+    pressRef.current={orderId:o.id,robotId:o.robotId,startX:e.clientX,origStart:o.start,duration:dur,moved:false};
+    const onMove=ev=>{const p=pressRef.current;if(!p)return;const dx=ev.clientX-p.startX;if(!p.moved&&Math.abs(dx)<4)return;p.moved=true;const dt=Math.round(dx/GANTT.pxPerMin/5)*5,desired=Math.max(now,p.origStart+dt);const pl=computePlacement(orders,p.robotId,desired,p.duration,p.orderId);setMoving({orderId:p.orderId,robotId:p.robotId,ghostStart:pl.start,conflict:pl.conflict});};
+    const onUp=ev=>{const p=pressRef.current;window.removeEventListener("mousemove",onMove);window.removeEventListener("mouseup",onUp);if(p&&p.moved){const dx=ev.clientX-p.startX,dt=Math.round(dx/GANTT.pxPerMin/5)*5,desired=Math.max(now,p.origStart+dt);const pl=computePlacement(orders,p.robotId,desired,p.duration,p.orderId);setOrders(oo=>oo.map(x=>x.id===p.orderId?{...x,start:pl.start}:x));lastDragRef.current=Date.now();}pressRef.current=null;setMoving(null);};
+    window.addEventListener("mousemove",onMove);window.addEventListener("mouseup",onUp);e.preventDefault();
+  }
+
+  return (
+    <div className="h-full flex flex-col bg-slate-50">
+      {/* Sub-header */}
+      <div className="h-12 px-5 border-b border-slate-200 bg-white flex items-center gap-3">
+        <div className="flex items-center gap-1.5">
+          <Icon name="CalendarRange" size={14} className="text-slate-500"/>
+          <span className="text-[13.5px] font-semibold text-slate-900">2026년 5월 13일 (수)</span>
+        </div>
+        <div className="h-5 w-px bg-slate-200"/>
+        <div className="ml-3 flex items-center gap-2 text-[11.5px] text-slate-500">
+          {Object.entries(SC).map(([k,v])=><span key={k} className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{background:v.chip}}/>{v.label}</span>)}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <button className="h-8 px-3 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700 flex items-center gap-1.5"><Icon name="Wand2" size={13}/> 자동 최적화</button>
+          <button onClick={()=>setAddOpen(true)} className="h-8 px-3 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-medium flex items-center gap-1.5 shadow-sm"><Icon name="Plus" size={13}/> 작업 추가</button>
+          <button onClick={()=>setLibOpen(o=>!o)} className={"h-8 px-3 rounded-md text-[12.5px] font-medium flex items-center gap-1.5 "+(libOpen?"bg-slate-100 text-slate-900":"border border-slate-200 bg-white text-slate-700")}><Icon name="PanelRightOpen" size={13}/> 라이브러리</button>
+        </div>
+      </div>
+      <div className="flex-1 min-h-0 flex">
+        <div className="flex-1 min-w-0 flex flex-col bg-white">
+          {/* Time ruler */}
+          <div className="h-10 border-b border-slate-200 flex shrink-0">
+            <div className="shrink-0 border-r border-slate-200 bg-slate-50/70 flex items-center px-2 gap-1.5" style={{width:RCOL}}>
+              <MultiFleetDropdown value={fleetF} onChange={setFleetF} counts={Object.fromEntries(fleets.map(f=>[f.id,allR.filter(r=>r.fleet===f.id).length]))}/>
+              <span className="ml-auto text-[10.5px] text-slate-400 tnum shrink-0">{visR.length}</span>
+            </div>
+            <div ref={headRef} className="flex-1 overflow-hidden">
+              <div className="relative h-full" style={{width:GW}}>
+                {Array.from({length:GANTT.endHour-GANTT.startHour+1},(_,i)=>{const h=GANTT.startHour+i,x=i*60*GANTT.pxPerMin;return <div key={h} className="absolute top-0 bottom-0 flex items-center" style={{left:x}}><div className="w-px h-3 bg-slate-300"/><span className="ml-1 text-[10.5px] font-medium text-slate-500 tnum">{String(h).padStart(2,"0")}:00</span></div>;})}
+                <div className="absolute top-0 bottom-0 w-px bg-rose-500" style={{left:(now-GANTT.startHour*60)*GANTT.pxPerMin}}>
+                  <div className="absolute -top-px -left-5 text-[10px] font-semibold text-rose-600 tnum bg-white px-1 rounded">NOW {fmtTime(now)}</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          {/* Rows */}
+          <div className="flex-1 min-h-0 flex">
+            <div ref={rColRef} className="shrink-0 border-r border-slate-200 bg-slate-50/40 overflow-y-hidden" style={{width:RCOL}}>
+              {visR.map(r=>{const fm=fleetMeta(r.fleet),sm=statusMap[r.status]||statusMap.idle;return(
+                <div key={r.id} className="flex items-center gap-2.5 px-3 border-b border-slate-200/70" style={{height:GANTT.rowH}}>
+                  <div className="relative w-7 h-7 rounded-md grid place-items-center" style={{background:fm.color+"18",color:fm.color}}><Icon name={r.fleet==="arm"?"Cog":"Bot"} size={14}/><span className="absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-white" style={{background:sm.color}}/></div>
+                  <div className="min-w-0"><div className="text-[12.5px] font-medium text-slate-900">{r.id}</div><div className="text-[10.5px] text-slate-500 truncate">{r.task||sm.label}</div></div>
+                </div>
+              );})}
+            </div>
+            <div ref={ganttRef} className="flex-1 overflow-auto relative">
+              <div className="relative" style={{width:GW,height:visR.length*GANTT.rowH}}>
+                {Array.from({length:GANTT.endHour-GANTT.startHour+1},(_,i)=><div key={i} className="absolute top-0 bottom-0 border-l border-slate-200/80" style={{left:i*60*GANTT.pxPerMin}}/>)}
+                {Array.from({length:(GANTT.endHour-GANTT.startHour)*2},(_,i)=>i%2===1?<div key={i} className="absolute top-0 bottom-0 border-l border-slate-100" style={{left:i*30*GANTT.pxPerMin}}/>:null)}
+                {visR.map((r,i)=><div key={r.id} onDragOver={e=>onRowDragOver(e,r.id)} onDragLeave={()=>setHoverPrev(null)} onDrop={e=>onRowDrop(e,r.id)} className="absolute left-0 right-0 border-b border-slate-200/70" style={{top:i*GANTT.rowH,height:GANTT.rowH}}/>)}
+                <div className="absolute top-0 bottom-0 z-20 pointer-events-none" style={{left:(now-GANTT.startHour*60)*GANTT.pxPerMin}}><div className="w-px h-full bg-rose-500"/></div>
+                {orders.map(o=>{
+                  const r=recipes.find(rr=>rr.id===o.recipeId);if(!r)return null;
+                  const dur=recipeDuration(r),rowIdx=visR.findIndex(rb=>rb.id===o.robotId);if(rowIdx<0)return null;
+                  const isMoving=moving?.orderId===o.id;
+                  const left=(o.start-GANTT.startHour*60)*GANTT.pxPerMin,width=dur*GANTT.pxPerMin,top=rowIdx*GANTT.rowH+6,height=GANTT.rowH-12;
+                  const s=SC[o.status],isSel=selOrder?.id===o.id,isHL=hlRcp&&o.recipeId===hlRcp,editable=isEditable(o);
+                  return (
+                    <button key={o.id} onMouseDown={e=>onBlockMouseDown(e,o)}
+                      onClick={e=>{if(Date.now()-lastDragRef.current<200){e.preventDefault();return;}setSelOrder({...o,recipe:r});}}
+                      className={"absolute rounded-md border text-left px-2 py-1.5 transition shadow-sm overflow-hidden "+s.bg+" "+s.border+" "+s.fg+(isSel?" ring-2 ring-blue-500 ring-offset-1 z-10":" hover:shadow-md hover:z-10")+(isHL?" ring-2 ring-amber-400":"")+(isMoving?" opacity-30":"")+(editable?" cursor-grab active:cursor-grabbing":" cursor-pointer")}
+                      style={{left,top,width,height}}>
+                      <div className="flex items-center gap-1.5 mb-0.5"><span className="w-1 h-3 rounded-sm shrink-0" style={{background:s.chip}}/><span className="text-[11px] font-semibold truncate flex-1">{r.name}</span>{!editable&&o.status==="queued"&&<Icon name="Lock" size={9} className="opacity-60 shrink-0"/>}</div>
+                      <div className="text-[10px] tnum opacity-80 flex items-center gap-1">{fmtTime(o.start)}—{fmtTime(o.start+dur)}<span className="opacity-50">·</span>{dur}분{o.status==="running"&&<span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse ml-auto"/>}{o.status==="error"&&<Icon name="AlertTriangle" size={10} className="ml-auto"/>}</div>
+                      {o.status==="running"&&<div className="absolute left-0 bottom-0 h-0.5 shimmer-bar" style={{width:"100%"}}/>}
+                    </button>
+                  );
+                })}
+                {moving&&(()=>{const o=orders.find(x=>x.id===moving.orderId);if(!o)return null;const r=recipes.find(rr=>rr.id===o.recipeId);if(!r)return null;const dur=recipeDuration(r),rowIdx=visR.findIndex(rb=>rb.id===moving.robotId);if(rowIdx<0)return null;const left=(moving.ghostStart-GANTT.startHour*60)*GANTT.pxPerMin,width=dur*GANTT.pxPerMin,top=rowIdx*GANTT.rowH+6;return <div className={"absolute rounded-md border-2 px-2 py-1.5 z-30 pointer-events-none shadow-xl "+(moving.conflict?"border-amber-500 bg-amber-100":"border-blue-500 bg-blue-100")} style={{left,top,width,height:GANTT.rowH-12}}><div className="text-[11px] font-semibold text-slate-900 truncate">{r.name}</div><div className="text-[10px] tnum text-slate-700">{fmtTime(moving.ghostStart)}—{fmtTime(moving.ghostStart+dur)}</div></div>;})()}
+                {hoverPrev&&(()=>{const rowIdx=visR.findIndex(rb=>rb.id===hoverPrev.robotId);if(rowIdx<0)return null;const left=(hoverPrev.start-GANTT.startHour*60)*GANTT.pxPerMin,width=hoverPrev.duration*GANTT.pxPerMin,top=rowIdx*GANTT.rowH+6;const r=recipes.find(rr=>rr.id===hoverPrev.recipeId);return <><div className="absolute pointer-events-none border-2 border-dashed border-amber-300 bg-amber-50/50 rounded-md" style={{left:left-GANTT.BUFFER*GANTT.pxPerMin,width:(hoverPrev.duration+2*GANTT.BUFFER)*GANTT.pxPerMin,top,height:GANTT.rowH-12}}/><div className={"absolute pointer-events-none rounded-md border-2 z-20 px-2 py-1.5 "+(hoverPrev.conflict?"border-amber-500 bg-amber-100/80":"border-blue-500 bg-blue-100/80")} style={{left,width,top,height:GANTT.rowH-12}}><div className="text-[11px] font-semibold text-slate-900 truncate">{r?.name}</div><div className="text-[10px] tnum text-slate-700">{fmtTime(hoverPrev.start)}·{hoverPrev.duration}분</div></div></>;})()}
+              </div>
+            </div>
+          </div>
+        </div>
+        {libOpen && (
+          <aside className="w-72 shrink-0 border-l border-slate-200 bg-white flex flex-col">
+            {/* Header */}
+            <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2">
+              <Icon name="Library" size={14} className="text-slate-500"/>
+              <span className="text-[13px] font-semibold text-slate-900">레시피 라이브러리</span>
+              <span className="text-[11px] text-slate-400 tnum">
+                {recipes.filter(r=>(libFleetF.size===0||libFleetF.has(r.fleet))&&(!libQ||r.name.toLowerCase().includes(libQ.toLowerCase()))).length}
+              </span>
+            </div>
+
+            {/* Search + Fleet filter */}
+            <div className="px-3 py-2.5 border-b border-slate-200 space-y-2">
+              {/* 검색 입력 */}
+              <div className="relative">
+                <Icon name="Search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                <input
+                  value={libQ}
+                  onChange={e=>setLibQ(e.target.value)}
+                  placeholder="레시피 검색"
+                  className="h-8 pl-7 pr-7 w-full rounded-md border border-slate-200 bg-slate-50 text-[12px] text-slate-800 outline-none focus:border-blue-400 focus:bg-white"
+                />
+                {libQ && (
+                  <button onClick={()=>setLibQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                    <Icon name="X" size={11}/>
+                  </button>
+                )}
+              </div>
+
+              {/* Fleet 멀티 필터 */}
+              <MultiFleetDropdown
+                value={libFleetF}
+                onChange={setLibFleetF}
+                counts={Object.fromEntries(fleets.map(f=>[f.id,recipes.filter(r=>r.fleet===f.id).length]))}
+              />
+            </div>
+
+            {/* Recipe list */}
+            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
+              <div className="text-[10.5px] text-slate-400 px-1 pt-1 flex items-center gap-1">
+                <Icon name="GripVertical" size={11}/> 간트로 드래그하여 스케줄
+              </div>
+              {recipes
+                .filter(r =>
+                  (libFleetF.size===0 || libFleetF.has(r.fleet)) &&
+                  (!libQ || r.name.toLowerCase().includes(libQ.toLowerCase()))
+                )
+                .map(r=>{
+                  const fm=fleetMeta(r.fleet),dur=recipeDuration(r),isHL=r.id===hlRcp;
+                  return (
+                    <div key={r.id} draggable onDragStart={e=>onLibDragStart(e,r.id)} onDragEnd={()=>{setDraggingRcp(null);setHoverPrev(null);}}
+                      className={"group rounded-lg border bg-white p-3 cursor-grab active:cursor-grabbing select-none "+(isHL?"border-amber-400 ring-2 ring-amber-200":"border-slate-200 hover:border-blue-400")}>
+                      <div className="flex items-start gap-2">
+                        <div className="w-7 h-7 rounded-md grid place-items-center shrink-0" style={{background:fm.color+"18",color:fm.color}}><Icon name="Workflow" size={13}/></div>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[12.5px] font-medium text-slate-900 truncate">
+                            {libQ ? (
+                              <span dangerouslySetInnerHTML={{__html: r.name.replace(new RegExp(`(${libQ})`, 'gi'), '<mark style="background:#dbeafe;color:#1d4ed8;border-radius:2px">$1</mark>')}}/>
+                            ) : r.name}
+                          </div>
+                          <div className="text-[10.5px] text-slate-500 tnum">{r.id}·{fm.name}</div>
+                        </div>
+                        <Icon name="GripVertical" size={13} className="text-slate-300 group-hover:text-slate-500 mt-1"/>
+                      </div>
+                      <div className="flex items-center gap-1 mt-2.5 overflow-hidden">
+                        {r.steps.slice(0,6).map((s,i)=>{const a=actMeta(s.actionType);return(<React.Fragment key={i}><div className="w-5 h-5 rounded grid place-items-center shrink-0" style={{background:a.color+"18"}}><Icon name={a.icon} size={10} style={{color:a.color}}/></div>{i<Math.min(r.steps.length,6)-1&&<div className="w-1 h-px bg-slate-300 shrink-0"/>}</React.Fragment>);})}
+                        <span className="ml-auto text-[10.5px] text-slate-500 tnum">{dur}분</span>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+              {/* 검색 결과 없음 */}
+              {recipes.filter(r=>(libFleetF.size===0||libFleetF.has(r.fleet))&&(!libQ||r.name.toLowerCase().includes(libQ.toLowerCase()))).length===0 && (
+                <div className="py-8 text-center">
+                  <Icon name="SearchX" size={20} className="text-slate-300 mx-auto mb-2"/>
+                  <div className="text-[12px] text-slate-400">검색 결과가 없습니다</div>
+                  <button onClick={()=>{setLibQ("");setLibFleetF(new Set());}} className="mt-2 text-[11px] text-blue-500 hover:text-blue-700">필터 초기화</button>
+                </div>
+              )}
+            </div>
+
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50/40 text-[10.5px] text-slate-500 flex gap-1.5">
+              <Icon name="Info" size={11} className="mt-0.5 shrink-0"/>
+              <span>앞뒤 작업 사이에 자동으로 <strong className="text-slate-700">{GANTT.BUFFER}분 버퍼</strong>가 적용됩니다.</span>
+            </div>
+          </aside>
+        )}
+      </div>
+      {selOrder && (
+        <div className="fixed inset-0 z-40 flex items-end justify-end p-4 pointer-events-none">
+          <div className="w-96 bg-white rounded-xl shadow-2xl border border-slate-200 pointer-events-auto overflow-hidden">
+            <div className="px-5 pt-4 pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-semibold" style={{background:SC[selOrder.status].chip+"20",color:SC[selOrder.status].chip}}><span className="w-1.5 h-1.5 rounded-full" style={{background:SC[selOrder.status].chip}}/>{SC[selOrder.status].label}</span>
+                <span className="text-[10.5px] text-slate-400 tnum">{selOrder.id}</span>
+                <button onClick={()=>setSelOrder(null)} className="ml-auto w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500"><Icon name="X" size={14}/></button>
+              </div>
+              <h3 className="text-[16px] font-semibold text-slate-900 mt-1.5">{selOrder.recipe.name}</h3>
+              <div className="text-[11.5px] text-slate-500 mt-0.5 flex items-center gap-3">
+                <span className="flex items-center gap-1"><Icon name="Bot" size={11}/> {selOrder.robotId}</span>
+                <span className="flex items-center gap-1"><Icon name="Clock" size={11}/> {fmtTime(selOrder.start)}—{fmtTime(selOrder.start+recipeDuration(selOrder.recipe))}</span>
+              </div>
+            </div>
+            <div className="px-5 py-3 border-b border-slate-200">
+              <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-2">단계 진행</div>
+              <div className="space-y-1.5">
+                {selOrder.recipe.steps.map((st,i)=>{const a=actMeta(st.actionType),isDone=selOrder.status==="done"||(selOrder.status==="running"&&i<Math.floor(selOrder.recipe.steps.length*0.6)),isCurr=selOrder.status==="running"&&i===Math.floor(selOrder.recipe.steps.length*0.6);return(
+                  <div key={i} className="flex items-center gap-2.5">
+                    <div className={"w-5 h-5 rounded-full grid place-items-center shrink-0 "+(isDone?"bg-emerald-500 text-white":isCurr?"bg-blue-500 text-white":"bg-slate-100 text-slate-400")}>{isDone?<Icon name="Check" size={10}/>:isCurr?<Icon name={a.icon} size={10}/>:<span className="text-[9px] font-semibold">{i+1}</span>}</div>
+                    <div className="flex items-center gap-1.5 flex-1 min-w-0"><Icon name={a.icon} size={11} style={{color:a.color}}/><span className="text-[12px] text-slate-800">{a.label}</span><span className="text-[10.5px] text-slate-400">@ {st.nodeId}</span></div>
+                    <span className="text-[10.5px] text-slate-500 tnum">{st.duration}m</span>
+                  </div>
+                );})}
+              </div>
+            </div>
+            <div className="px-5 py-3 flex items-center gap-2">
+              {isEditable(selOrder)?<>
+                <button onClick={()=>copyOrder(selOrder)} className="flex-1 h-9 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700 flex items-center justify-center gap-1.5"><Icon name="Copy" size={13}/> 복사</button>
+                <button onClick={()=>deleteOrder(selOrder)} className="h-9 px-3 rounded-md border border-rose-200 bg-white hover:bg-rose-50 text-[12.5px] font-medium text-rose-600 flex items-center justify-center gap-1.5"><Icon name="Trash2" size={13}/></button>
+              </>:<div className="flex-1 h-9 rounded-md bg-slate-50 border border-slate-200 text-[11.5px] text-slate-500 flex items-center justify-center gap-1.5"><Icon name="Lock" size={12}/>
+                {selOrder.status==="done"&&"완료된 작업은 수정할 수 없습니다"}
+                {selOrder.status==="running"&&"진행 중인 작업은 수정할 수 없습니다"}
+                {selOrder.status==="error"&&"실패 - 시스템 검토 필요"}
+                {selOrder.status==="queued"&&"현재 시점 이후 작업만 수정 가능"}
+              </div>}
+            </div>
+          </div>
+        </div>
+      )}
+      {addOpen && (
+        <AddOrderDialog orders={orders} onClose={()=>setAddOpen(false)} onCreate={payload=>{
+          const r=recipes.find(rr=>rr.id===payload.recipeId);if(!r)return;
+          const dur=recipeDuration(r),p=computePlacement(orders,payload.robotId,payload.start,dur,null);
+          setOrders(oo=>[...oo,{id:"ord-"+(1000+oo.length+Math.floor(Math.random()*99)),robotId:payload.robotId,recipeId:payload.recipeId,start:p.start,status:"queued"}]);
+          setAddOpen(false);setHlRcp(payload.recipeId);setTimeout(()=>setHlRcp(null),3500);
+        }}/>
+      )}
+    </div>
+  );
+}
+
+function AddOrderDialog({ orders, onClose, onCreate }) {
+  const today=new Date();
+  const todayStr=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
+  const [fleet,setFleet]=useState("amr");
+  const fr=recipes.filter(r=>r.fleet===fleet);
+  const rb=robots.filter(r=>r.fleet===fleet);
+  const [recipeId,setRecipeId]=useState(fr[0]?.id||"");
+  const [robotId,setRobotId]=useState(rb[0]?.id||"");
+  const [date,setDate]=useState(todayStr);
+  const [hour,setHour]=useState(13);
+  const [minute,setMinute]=useState(0);
+  const [repeat,setRepeat]=useState(false);
+  const [repeatDays,setRepeatDays]=useState(new Set());
+  useEffect(()=>{const rs=recipes.filter(r=>r.fleet===fleet),rbs=robots.filter(r=>r.fleet===fleet);if(!rs.find(r=>r.id===recipeId))setRecipeId(rs[0]?.id||"");if(!rbs.find(r=>r.id===robotId))setRobotId(rbs[0]?.id||"");},[fleet]);
+  const recipe=recipes.find(r=>r.id===recipeId);
+  const dur=recipe?recipeDuration(recipe):0;
+  const desired=hour*60+minute;
+  const placement=recipe&&robotId?computePlacement(orders,robotId,desired,dur,null):{start:desired,conflict:false};
+  const shifted=placement.conflict&&placement.start!==desired;
+  const DAYS=[{id:0,label:"일"},{id:1,label:"월"},{id:2,label:"화"},{id:3,label:"수"},{id:4,label:"목"},{id:5,label:"금"},{id:6,label:"토"}];
+  const toggleDay=d=>{const n=new Set(repeatDays);n.has(d)?n.delete(d):n.add(d);setRepeatDays(n);};
+  const dayLabel=DAYS.filter(d=>repeatDays.has(d.id)).map(d=>d.label).join("·");
+  const presetLabel=repeatDays.size===7?" (매일)":(!repeatDays.has(0)&&!repeatDays.has(6)&&repeatDays.size===5)?" (평일)":(repeatDays.has(0)&&repeatDays.has(6)&&repeatDays.size===2)?" (주말)":"";
+  return (
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
+      <div className="w-[540px] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden" onClick={e=>e.stopPropagation()}>
+        <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-2">
+          <div className="w-7 h-7 rounded-md bg-blue-50 grid place-items-center text-blue-600"><Icon name="CalendarPlus" size={14}/></div>
+          <h3 className="text-[14px] font-semibold text-slate-900">새 작업 추가</h3>
+          <button onClick={onClose} className="ml-auto w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500"><Icon name="X" size={14}/></button>
+        </div>
+        <div className="p-5 space-y-4 overflow-y-auto" style={{maxHeight:"72vh"}}>
+          {/* Fleet */}
+          <div>
+            <div className="text-[11px] font-medium text-slate-500 mb-1">Fleet 선택</div>
+            <div className="grid grid-cols-4 gap-1.5">
+              {fleets.map(f=><button key={f.id} onClick={()=>setFleet(f.id)} className={"h-9 rounded-md text-[12px] font-medium border transition flex items-center justify-center gap-1.5 "+(fleet===f.id?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 bg-white text-slate-700 hover:bg-slate-50")}><span className="w-1.5 h-1.5 rounded-full" style={{background:f.color}}/>{f.name}</button>)}
+            </div>
+          </div>
+          {/* Recipe + Robot */}
+          <div className="grid grid-cols-2 gap-3">
+            <div><div className="text-[11px] font-medium text-slate-500 mb-1">레시피</div><div className="relative"><select value={recipeId} onChange={e=>setRecipeId(e.target.value)} className="h-9 pl-3 pr-8 w-full rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-800 outline-none focus:border-blue-400 appearance-none">{fr.map(r=><option key={r.id} value={r.id}>{r.name}·{recipeDuration(r)}분</option>)}</select><Icon name="ChevronDown" size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/></div></div>
+            <div><div className="text-[11px] font-medium text-slate-500 mb-1">할당 로봇</div><div className="relative"><select value={robotId} onChange={e=>setRobotId(e.target.value)} className="h-9 pl-3 pr-8 w-full rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-800 outline-none focus:border-blue-400 appearance-none">{rb.map(r=><option key={r.id} value={r.id}>{r.id}</option>)}</select><Icon name="ChevronDown" size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/></div></div>
+          </div>
+          {/* Date + Time */}
+          <div>
+            <div className="text-[11px] font-medium text-slate-500 mb-1">날짜 · 시작 시간</div>
+            <div className="grid grid-cols-3 gap-2">
+              <div className="relative">
+                <Icon name="Calendar" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none z-10"/>
+                <input type="date" value={date} onChange={e=>setDate(e.target.value)} className="h-9 pl-7 pr-2 w-full rounded-md border border-slate-200 bg-white text-[12px] text-slate-800 outline-none focus:border-blue-400 cursor-pointer"/>
+              </div>
+              <div className="relative"><select value={hour} onChange={e=>setHour(+e.target.value)} className="h-9 pl-3 pr-8 w-full rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-800 outline-none appearance-none">{Array.from({length:24},(_,i)=><option key={i} value={i}>{String(i).padStart(2,"0")}시</option>)}</select><Icon name="ChevronDown" size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/></div>
+              <div className="relative"><select value={minute} onChange={e=>setMinute(+e.target.value)} className="h-9 pl-3 pr-8 w-full rounded-md border border-slate-200 bg-white text-[12.5px] text-slate-800 outline-none appearance-none">{[0,5,10,15,20,25,30,35,40,45,50,55].map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}분</option>)}</select><Icon name="ChevronDown" size={12} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/></div>
+            </div>
+          </div>
+          {/* Repeat */}
+          <div>
+            <div className="flex items-center justify-between mb-2">
+              <div className="text-[11px] font-medium text-slate-500">반복 설정</div>
+              <button onClick={()=>{setRepeat(o=>!o);if(repeat)setRepeatDays(new Set());}}
+                className={"h-8 px-3 rounded-lg text-[12px] font-medium border transition flex items-center gap-2 "+(repeat?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 bg-white text-slate-600 hover:bg-slate-50")}>
+                <div className={"w-8 h-4 rounded-full relative transition-all duration-200 "+(repeat?"bg-blue-500":"bg-slate-300")}>
+                  <div className={"absolute top-0.5 w-3 h-3 rounded-full bg-white shadow transition-all duration-200 "+(repeat?"left-4":"left-0.5")}/>
+                </div>
+                <Icon name="Repeat" size={12}/>
+                반복 {repeat?"켜짐":"꺼짐"}
+              </button>
+            </div>
+            {repeat && (
+              <div className="rounded-lg border border-blue-200 bg-blue-50/40 p-3">
+                <div className="text-[10.5px] font-semibold text-blue-600 uppercase tracking-wider mb-2.5 flex items-center gap-1.5">
+                  <Icon name="CalendarDays" size={11}/> 반복 요일 선택
+                </div>
+                <div className="flex items-center gap-1.5">
+                  {DAYS.map(d=>{
+                    const on=repeatDays.has(d.id);
+                    const isSun=d.id===0,isSat=d.id===6;
+                    return (
+                      <button key={d.id} onClick={()=>toggleDay(d.id)}
+                        className={"flex-1 h-10 rounded-lg text-[13px] font-bold border-2 transition-all "+(
+                          on ? isSun?"border-rose-400 bg-rose-500 text-white shadow-sm"
+                             : isSat?"border-blue-400 bg-blue-500 text-white shadow-sm"
+                             : "border-slate-700 bg-slate-800 text-white shadow-sm"
+                          : "border-slate-200 bg-white text-slate-500 hover:border-slate-300 hover:bg-slate-50"
+                        )}>
+                        {d.label}
+                      </button>
+                    );
+                  })}
+                </div>
+                <div className="mt-2 h-5 flex items-center">
+                  {repeatDays.size>0 ? (
+                    <div className="flex items-center gap-1.5 text-[10.5px] text-blue-600">
+                      <Icon name="Check" size={10}/>
+                      <span className="font-medium">{dayLabel}{presetLabel} 반복</span>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-1 text-[10.5px] text-slate-400">
+                      <Icon name="Info" size={10}/> 요일을 하나 이상 선택해주세요
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+          {/* Preview */}
+          {recipe&&robotId&&(
+            <div className={"rounded-md border p-3 "+(shifted?"border-amber-300 bg-amber-50":"border-blue-200 bg-blue-50/60")}>
+              <div className="flex items-center gap-2 text-[11.5px]">
+                <Icon name={shifted?"AlertTriangle":"Sparkles"} size={12} className={shifted?"text-amber-600":"text-blue-600"}/>
+                <span className={"font-semibold "+(shifted?"text-amber-900":"text-blue-900")}>{shifted?"충돌 회피 적용됨":"스케줄 가능"}</span>
+                <span className="ml-auto text-slate-500 tnum">{robotId}·{fmtTime(placement.start)}—{fmtTime(placement.start+dur)}</span>
+              </div>
+              {repeat&&repeatDays.size>0&&(
+                <div className="mt-1.5 text-[10.5px] text-blue-600 flex items-center gap-1.5">
+                  <Icon name="Repeat" size={10}/>
+                  <span>{dayLabel}{presetLabel} · 매주 반복 예약</span>
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+        <div className="h-14 px-5 border-t border-slate-200 bg-slate-50/50 flex items-center gap-2">
+          {repeat&&repeatDays.size>0&&<div className="text-[10.5px] text-blue-600 flex items-center gap-1"><Icon name="Repeat" size={11}/>{repeatDays.size}개 요일 반복</div>}
+          <button onClick={onClose} className="ml-auto h-9 px-3.5 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700">취소</button>
+          <button onClick={()=>{if(!recipeId||!robotId)return;if(repeat&&repeatDays.size===0)return;onCreate({recipeId,robotId,start:placement.start,date,repeat,repeatDays:[...repeatDays]});}}
+            disabled={!recipeId||!robotId||(repeat&&repeatDays.size===0)}
+            className="h-9 px-4 rounded-md bg-blue-600 hover:bg-blue-700 disabled:bg-slate-300 text-white text-[12.5px] font-medium flex items-center gap-1.5 shadow-sm">
+            <Icon name="Send" size={13}/> {repeat?"반복 스케줄 생성":"생성"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+/* ══════════════════════════════════════════
+   LOGS
+══════════════════════════════════════════ */
+function LogsView() {
+  const [filter,setFilter]=useState("all");
+  const filtered=logs.filter(l=>filter==="all"||l.level===filter);
+  return (
+    <div className="h-full flex flex-col bg-slate-50">
+      <div className="h-12 px-5 border-b border-slate-200 bg-white flex items-center gap-3">
+        <Icon name="ScrollText" size={14} className="text-slate-500"/>
+        <span className="text-[13.5px] font-semibold text-slate-900">시스템 로그</span>
+        <div className="ml-2 flex items-center gap-1">
+          {[{id:"all",label:"전체",count:logs.length},{id:"info",label:"Info",count:logs.filter(l=>l.level==="info").length},{id:"warn",label:"Warn",count:logs.filter(l=>l.level==="warn").length},{id:"error",label:"Error",count:logs.filter(l=>l.level==="error").length}].map(t=>(
+            <button key={t.id} onClick={()=>setFilter(t.id)} className={"h-7 px-2.5 rounded text-[11.5px] font-medium flex items-center gap-1.5 "+(filter===t.id?"bg-slate-100 text-slate-900":"text-slate-600 hover:bg-slate-100/60")}>{t.label}<span className="text-slate-400 tnum">{t.count}</span></button>
+          ))}
+        </div>
+        <div className="ml-auto flex items-center gap-2">
+          <div className="relative"><Icon name="Search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400"/><input placeholder="로봇 ID, 메시지 검색" className="h-8 pl-7 pr-3 rounded-md border border-slate-200 bg-white text-[12px] w-56 outline-none focus:border-blue-400"/></div>
+          <button className="h-8 px-3 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700 flex items-center gap-1.5"><Icon name="Download" size={13}/> CSV</button>
+        </div>
+      </div>
+      <div className="flex-1 overflow-auto p-5">
+        <div className="bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden">
+          <table className="w-full text-[12px]">
+            <thead><tr className="text-left text-[11px] text-slate-500 border-b border-slate-200"><th className="font-medium px-4 py-2.5 w-24">시각</th><th className="font-medium py-2.5 w-20">레벨</th><th className="font-medium py-2.5 w-28">소스</th><th className="font-medium py-2.5">메시지</th></tr></thead>
+            <tbody>
+              {filtered.map((l,i)=>{const lc=l.level==="error"?"text-rose-600 bg-rose-50":l.level==="warn"?"text-amber-700 bg-amber-50":"text-slate-600 bg-slate-100";return(
+                <tr key={i} className="border-b border-slate-100 hover:bg-slate-50/50">
+                  <td className="px-4 py-2 font-mono text-[11px] text-slate-500 tnum">{l.ts}</td>
+                  <td className="py-2"><span className={"inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold uppercase tracking-wider "+lc}>{l.level}</span></td>
+                  <td className="py-2 font-mono text-[11px] text-slate-700">{l.robot}</td>
+                  <td className="py-2 text-slate-800">{l.msg}</td>
+                </tr>
+              );})}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════
+   ROOT APP
+══════════════════════════════════════════ */
+function App() {
+  useEffect(()=>{const el=document.createElement("style");el.textContent=CSS;document.head.appendChild(el);return()=>document.head.removeChild(el);},[]);
+  const [active,setActive]=useState("schedule");
+  const [cmdOpen,setCmdOpen]=useState(false);
+  const [focusRcp,setFocusRcp]=useState(null);
+
+  useEffect(()=>{
+    const fn=e=>{if((e.ctrlKey||e.metaKey)&&e.key.toLowerCase()==="k"){e.preventDefault();setCmdOpen(o=>!o);}else if(e.key==="Escape")setCmdOpen(false);};
+    window.addEventListener("keydown",fn);return()=>window.removeEventListener("keydown",fn);
+  },[]);
+
+  function handleJump({view,payload}){
+    if(view==="schedule"&&payload?.focusRecipeId){setFocusRcp(payload.focusRecipeId);setTimeout(()=>setFocusRcp(null),4500);}
+    setActive(view);
+  }
+  const activeMeta=NAV.find(n=>n.id===active);
+  return (
+    <div className="h-screen w-screen flex bg-slate-50 overflow-hidden">
+      <Sidebar active={active} onChange={setActive}/>
+      <div className="flex-1 min-w-0 flex flex-col">
+        <Header activeLabel={activeMeta?.label||""} onOpenCmd={()=>setCmdOpen(true)}/>
+        <main className="flex-1 min-h-0">
+          {active==="home"     &&<MonitoringHome/>}
+          {active==="analytics"&&<AnalyticsView/>}
+          {active==="basis"    &&<BasisView/>}
+          {active==="recipe"   &&<RecipeView/>}
+          {active==="schedule" &&<SchedulerView initialFocusRecipeId={focusRcp}/>}
+          {active==="logs"     &&<LogsView/>}
+        </main>
+      </div>
+      <CommandPalette open={cmdOpen} onClose={()=>setCmdOpen(false)} onJump={handleJump}/>
+    </div>
+  );
+}
+
+const root = ReactDOM.createRoot(document.getElementById("root"));
+root.render(React.createElement(App));
+</script>
+</body>
+</html>
