@@ -1,0 +1,1732 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <title>Connect: Ride 프로토타입</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap"/>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable.min.css"/>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body {
+      font-family: 'Pretendard Variable', Pretendard, -apple-system, BlinkMacSystemFont,
+        system-ui, Roboto, 'Helvetica Neue', 'Apple SD Gothic Neo', Arial, sans-serif;
+      background: radial-gradient(1200px 800px at 50% 30%, #EAF2FC 0%, #DFE9F7 60%, #D2DEF0 100%);
+      -webkit-font-smoothing: antialiased;
+      -moz-osx-font-smoothing: grayscale;
+      color: #0E1A33;
+      overflow: hidden;
+    }
+    #stage {
+      position: fixed; inset: 0;
+      display: flex; align-items: center; justify-content: center;
+      padding: 24px;
+    }
+    #phone-wrap { position: relative; }
+    button { font-family: inherit; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: radial-gradient(circle at 1px 1px, rgba(0,47,108,0.06) 1px, transparent 0);
+      background-size: 24px 24px;
+      pointer-events: none;
+    }
+    #floor-label {
+      position: fixed; bottom: 24px; left: 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 11px; color: #5B6B85; letter-spacing: 0.06em; opacity: 0.7;
+    }
+    #brand-label {
+      position: fixed; top: 24px; left: 24px;
+      font-size: 13px; font-weight: 700; color: #0E1A33;
+      letter-spacing: -0.01em; opacity: 0.85;
+    }
+    #brand-label span {
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 500; font-size: 11px; color: #5B6B85;
+      display: block; margin-top: 2px; letter-spacing: 0.04em;
+    }
+  </style>
+</head>
+<body>
+  <div id="brand-label">Connect: Ride<span>SEMICONDUCTOR · INTERNAL PROTOTYPE · v0.5</span></div>
+  <div id="floor-label">P3 · 7F · BAY/EQ GRID</div>
+
+  <div id="stage">
+    <div id="phone-wrap">
+      <div id="root"></div>
+    </div>
+  </div>
+
+  <script src="https://unpkg.com/react@18.3.1/umd/react.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" crossorigin="anonymous"></script>
+  <script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" crossorigin="anonymous"></script>
+
+  <!-- ═══════════════════════════════════════════════════════════ tweaks-panel.jsx -->
+  <script type="text/babel">
+const __TWEAKS_STYLE = `
+  .twk-panel{position:fixed;right:16px;bottom:16px;z-index:2147483646;width:280px;
+    max-height:calc(100vh - 32px);display:flex;flex-direction:column;
+    transform:scale(var(--dc-inv-zoom,1));transform-origin:bottom right;
+    background:rgba(250,249,247,.78);color:#29261b;
+    -webkit-backdrop-filter:blur(24px) saturate(160%);backdrop-filter:blur(24px) saturate(160%);
+    border:.5px solid rgba(255,255,255,.6);border-radius:14px;
+    box-shadow:0 1px 0 rgba(255,255,255,.5) inset,0 12px 40px rgba(0,0,0,.18);
+    font:11.5px/1.4 ui-sans-serif,system-ui,-apple-system,sans-serif;overflow:hidden}
+  .twk-hd{display:flex;align-items:center;justify-content:space-between;
+    padding:10px 8px 10px 14px;cursor:move;user-select:none}
+  .twk-hd b{font-size:12px;font-weight:600;letter-spacing:.01em}
+  .twk-x{appearance:none;border:0;background:transparent;color:rgba(41,38,27,.55);
+    width:22px;height:22px;border-radius:6px;cursor:default;font-size:13px;line-height:1}
+  .twk-x:hover{background:rgba(0,0,0,.06);color:#29261b}
+  .twk-body{padding:2px 14px 14px;display:flex;flex-direction:column;gap:10px;
+    overflow-y:auto;overflow-x:hidden;min-height:0;
+    scrollbar-width:thin;scrollbar-color:rgba(0,0,0,.15) transparent}
+  .twk-row{display:flex;flex-direction:column;gap:5px}
+  .twk-row-h{flex-direction:row;align-items:center;justify-content:space-between;gap:10px}
+  .twk-lbl{display:flex;justify-content:space-between;align-items:baseline;color:rgba(41,38,27,.72)}
+  .twk-lbl>span:first-child{font-weight:500}
+  .twk-val{color:rgba(41,38,27,.5);font-variant-numeric:tabular-nums}
+  .twk-sect{font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;
+    color:rgba(41,38,27,.45);padding:10px 0 0}
+  .twk-sect:first-child{padding-top:0}
+  .twk-field{appearance:none;box-sizing:border-box;width:100%;min-width:0;height:26px;padding:0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;
+    background:rgba(255,255,255,.6);color:inherit;font:inherit;outline:none}
+  .twk-field:focus{border-color:rgba(0,0,0,.25);background:rgba(255,255,255,.85)}
+  select.twk-field{padding-right:22px;
+    background-image:url("data:image/svg+xml;utf8,<svg xmlns='http://www.w3.org/2000/svg' width='10' height='6' viewBox='0 0 10 6'><path fill='rgba(0,0,0,.5)' d='M0 0h10L5 6z'/></svg>");
+    background-repeat:no-repeat;background-position:right 8px center}
+  .twk-slider{appearance:none;-webkit-appearance:none;width:100%;height:4px;margin:6px 0;
+    border-radius:999px;background:rgba(0,0,0,.12);outline:none}
+  .twk-slider::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;
+    width:14px;height:14px;border-radius:50%;background:#fff;
+    border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-slider::-moz-range-thumb{width:14px;height:14px;border-radius:50%;
+    background:#fff;border:.5px solid rgba(0,0,0,.12);box-shadow:0 1px 3px rgba(0,0,0,.2);cursor:default}
+  .twk-seg{position:relative;display:flex;padding:2px;border-radius:8px;
+    background:rgba(0,0,0,.06);user-select:none}
+  .twk-seg-thumb{position:absolute;top:2px;bottom:2px;border-radius:6px;
+    background:rgba(255,255,255,.9);box-shadow:0 1px 2px rgba(0,0,0,.12);
+    transition:left .15s cubic-bezier(.3,.7,.4,1),width .15s}
+  .twk-seg.dragging .twk-seg-thumb{transition:none}
+  .twk-seg button{appearance:none;position:relative;z-index:1;flex:1;border:0;
+    background:transparent;color:inherit;font:inherit;font-weight:500;min-height:22px;
+    border-radius:6px;cursor:default;padding:4px 6px;line-height:1.2;overflow-wrap:anywhere}
+  .twk-toggle{position:relative;width:32px;height:18px;border:0;border-radius:999px;
+    background:rgba(0,0,0,.15);transition:background .15s;cursor:default;padding:0}
+  .twk-toggle[data-on="1"]{background:#34c759}
+  .twk-toggle i{position:absolute;top:2px;left:2px;width:14px;height:14px;border-radius:50%;
+    background:#fff;box-shadow:0 1px 2px rgba(0,0,0,.25);transition:transform .15s}
+  .twk-toggle[data-on="1"] i{transform:translateX(14px)}
+  .twk-num{display:flex;align-items:center;box-sizing:border-box;min-width:0;height:26px;padding:0 0 0 8px;
+    border:.5px solid rgba(0,0,0,.1);border-radius:7px;background:rgba(255,255,255,.6)}
+  .twk-num-lbl{font-weight:500;color:rgba(41,38,27,.6);cursor:ew-resize;user-select:none;padding-right:8px}
+  .twk-num input{flex:1;min-width:0;height:100%;border:0;background:transparent;
+    font:inherit;font-variant-numeric:tabular-nums;text-align:right;padding:0 8px 0 0;
+    outline:none;color:inherit;-moz-appearance:textfield}
+  .twk-num input::-webkit-inner-spin-button,.twk-num input::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+  .twk-num-unit{padding-right:8px;color:rgba(41,38,27,.45)}
+  .twk-btn{appearance:none;height:26px;padding:0 12px;border:0;border-radius:7px;
+    background:rgba(0,0,0,.78);color:#fff;font:inherit;font-weight:500;cursor:default}
+  .twk-btn:hover{background:rgba(0,0,0,.88)}
+  .twk-btn.secondary{background:rgba(0,0,0,.06);color:inherit}
+  .twk-btn.secondary:hover{background:rgba(0,0,0,.1)}
+`;
+
+function useTweaks(defaults) {
+  const [values, setValues] = React.useState(defaults);
+  const setTweak = React.useCallback((keyOrEdits, val) => {
+    const edits = typeof keyOrEdits === 'object' && keyOrEdits !== null
+      ? keyOrEdits : { [keyOrEdits]: val };
+    setValues((prev) => ({ ...prev, ...edits }));
+    window.parent.postMessage({ type: '__edit_mode_set_keys', edits }, '*');
+    window.dispatchEvent(new CustomEvent('tweakchange', { detail: edits }));
+  }, []);
+  return [values, setTweak];
+}
+
+function TweaksPanel({ title = 'Tweaks', children }) {
+  const [open, setOpen] = React.useState(false);
+  const dragRef = React.useRef(null);
+  const offsetRef = React.useRef({ x: 16, y: 16 });
+  const PAD = 16;
+
+  const clampToViewport = React.useCallback(() => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const w = panel.offsetWidth, h = panel.offsetHeight;
+    const maxRight = Math.max(PAD, window.innerWidth - w - PAD);
+    const maxBottom = Math.max(PAD, window.innerHeight - h - PAD);
+    offsetRef.current = {
+      x: Math.min(maxRight, Math.max(PAD, offsetRef.current.x)),
+      y: Math.min(maxBottom, Math.max(PAD, offsetRef.current.y)),
+    };
+    panel.style.right = offsetRef.current.x + 'px';
+    panel.style.bottom = offsetRef.current.y + 'px';
+  }, []);
+
+  React.useEffect(() => {
+    if (!open) return;
+    clampToViewport();
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(clampToViewport) : null;
+    if (ro) { ro.observe(document.documentElement); return () => ro.disconnect(); }
+    window.addEventListener('resize', clampToViewport);
+    return () => window.removeEventListener('resize', clampToViewport);
+  }, [open, clampToViewport]);
+
+  React.useEffect(() => {
+    const onMsg = (e) => {
+      const t = e?.data?.type;
+      if (t === '__activate_edit_mode') setOpen(true);
+      else if (t === '__deactivate_edit_mode') setOpen(false);
+    };
+    window.addEventListener('message', onMsg);
+    window.parent.postMessage({ type: '__edit_mode_available' }, '*');
+    return () => window.removeEventListener('message', onMsg);
+  }, []);
+
+  const dismiss = () => {
+    setOpen(false);
+    window.parent.postMessage({ type: '__edit_mode_dismissed' }, '*');
+  };
+
+  const onDragStart = (e) => {
+    const panel = dragRef.current;
+    if (!panel) return;
+    const r = panel.getBoundingClientRect();
+    const sx = e.clientX, sy = e.clientY;
+    const startRight = window.innerWidth - r.right;
+    const startBottom = window.innerHeight - r.bottom;
+    const move = (ev) => {
+      offsetRef.current = { x: startRight - (ev.clientX - sx), y: startBottom - (ev.clientY - sy) };
+      clampToViewport();
+    };
+    const up = () => { window.removeEventListener('mousemove', move); window.removeEventListener('mouseup', up); };
+    window.addEventListener('mousemove', move);
+    window.addEventListener('mouseup', up);
+  };
+
+  return (
+    <>
+      {/* Floating toggle button */}
+      <button
+        onClick={() => setOpen(o => !o)}
+        style={{
+          position: 'fixed', right: 16, bottom: open ? 'auto' : 16,
+          top: open ? 16 : 'auto',
+          zIndex: 2147483647,
+          width: 36, height: 36, borderRadius: '50%',
+          background: 'rgba(0,47,108,0.85)', color: '#fff',
+          border: 'none', cursor: 'pointer', fontSize: 16,
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.25)',
+        }}
+        title={open ? '패널 닫기' : '설정 열기'}
+      >⚙</button>
+
+      {open && (
+        <>
+          <style>{__TWEAKS_STYLE}</style>
+          <div ref={dragRef} className="twk-panel"
+            style={{ right: offsetRef.current.x, bottom: offsetRef.current.y }}>
+            <div className="twk-hd" onMouseDown={onDragStart}>
+              <b>{title}</b>
+              <button className="twk-x" aria-label="Close tweaks"
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={dismiss}>✕</button>
+            </div>
+            <div className="twk-body">{children}</div>
+          </div>
+        </>
+      )}
+    </>
+  );
+}
+
+function TweakSection({ label, children }) {
+  return (
+    <>
+      <div className="twk-sect">{label}</div>
+      {children}
+    </>
+  );
+}
+
+function TweakRow({ label, value, children, inline = false }) {
+  return (
+    <div className={inline ? 'twk-row twk-row-h' : 'twk-row'}>
+      <div className="twk-lbl">
+        <span>{label}</span>
+        {value != null && <span className="twk-val">{value}</span>}
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function TweakSlider({ label, value, min = 0, max = 100, step = 1, unit = '', onChange }) {
+  return (
+    <TweakRow label={label} value={`${value}${unit}`}>
+      <input type="range" className="twk-slider" min={min} max={max} step={step}
+        value={value} onChange={(e) => onChange(Number(e.target.value))} />
+    </TweakRow>
+  );
+}
+
+function TweakToggle({ label, value, onChange }) {
+  return (
+    <div className="twk-row twk-row-h">
+      <div className="twk-lbl"><span>{label}</span></div>
+      <button type="button" className="twk-toggle" data-on={value ? '1' : '0'}
+        role="switch" aria-checked={!!value}
+        onClick={() => onChange(!value)}><i /></button>
+    </div>
+  );
+}
+
+function TweakSelect({ label, value, options, onChange }) {
+  return (
+    <TweakRow label={label}>
+      <select className="twk-field" value={value} onChange={(e) => onChange(e.target.value)}>
+        {options.map((o) => {
+          const v = typeof o === 'object' ? o.value : o;
+          const l = typeof o === 'object' ? o.label : o;
+          return <option key={v} value={v}>{l}</option>;
+        })}
+      </select>
+    </TweakRow>
+  );
+}
+
+function TweakRadio({ label, value, options, onChange }) {
+  const trackRef = React.useRef(null);
+  const [dragging, setDragging] = React.useState(false);
+  const valueRef = React.useRef(value);
+  valueRef.current = value;
+  const labelLen = (o) => String(typeof o === 'object' ? o.label : o).length;
+  const maxLen = options.reduce((m, o) => Math.max(m, labelLen(o)), 0);
+  const fitsAsSegments = maxLen <= ({ 2: 16, 3: 10 }[options.length] ?? 0);
+  if (!fitsAsSegments) {
+    const resolve = (s) => {
+      const m = options.find((o) => String(typeof o === 'object' ? o.value : o) === s);
+      return m === undefined ? s : typeof m === 'object' ? m.value : m;
+    };
+    return <TweakSelect label={label} value={value} options={options}
+      onChange={(s) => onChange(resolve(s))} />;
+  }
+  const opts = options.map((o) => (typeof o === 'object' ? o : { value: o, label: o }));
+  const idx = Math.max(0, opts.findIndex((o) => o.value === value));
+  const n = opts.length;
+  const segAt = (clientX) => {
+    const r = trackRef.current.getBoundingClientRect();
+    const inner = r.width - 4;
+    const i = Math.floor(((clientX - r.left - 2) / inner) * n);
+    return opts[Math.max(0, Math.min(n - 1, i))].value;
+  };
+  const onPointerDown = (e) => {
+    setDragging(true);
+    const v0 = segAt(e.clientX);
+    if (v0 !== valueRef.current) onChange(v0);
+    const move = (ev) => { const v = segAt(ev.clientX); if (v !== valueRef.current) onChange(v); };
+    const up = () => { setDragging(false); window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); };
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  };
+  return (
+    <TweakRow label={label}>
+      <div ref={trackRef} role="radiogroup" onPointerDown={onPointerDown}
+        className={dragging ? 'twk-seg dragging' : 'twk-seg'}>
+        <div className="twk-seg-thumb"
+          style={{ left: `calc(2px + ${idx} * (100% - 4px) / ${n})`, width: `calc((100% - 4px) / ${n})` }} />
+        {opts.map((o) => (
+          <button key={o.value} type="button" role="radio" aria-checked={o.value === value}>{o.label}</button>
+        ))}
+      </div>
+    </TweakRow>
+  );
+}
+
+Object.assign(window, { useTweaks, TweaksPanel, TweakSection, TweakRow, TweakSlider, TweakToggle, TweakRadio, TweakSelect });
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════ data.jsx -->
+  <script type="text/babel">
+const FAB_NODES = [
+  { id: 'BAY-01', type: 'bay', x: 12, y: 18, name: '공정 BAY' },
+  { id: 'BAY-02', type: 'bay', x: 30, y: 18, name: '공정 BAY' },
+  { id: 'BAY-03', type: 'bay', x: 50, y: 18, name: '공정 BAY' },
+  { id: 'BAY-04', type: 'bay', x: 70, y: 18, name: '공정 BAY' },
+  { id: 'BAY-05', type: 'bay', x: 88, y: 18, name: '공정 BAY' },
+  { id: 'EQ-A1',  type: 'eq',  x: 12, y: 48, name: '장비 스테이션' },
+  { id: 'EQ-A2',  type: 'eq',  x: 30, y: 48, name: '장비 스테이션' },
+  { id: 'EQ-B1',  type: 'eq',  x: 50, y: 48, name: '장비 스테이션' },
+  { id: 'EQ-B2',  type: 'eq',  x: 70, y: 48, name: '장비 스테이션' },
+  { id: 'EQ-B3',  type: 'eq',  x: 88, y: 48, name: '장비 스테이션' },
+  { id: 'LK-01',  type: 'lk',  x: 12, y: 80, name: '스마트락커' },
+  { id: 'LK-02',  type: 'lk',  x: 30, y: 80, name: '스마트락커' },
+  { id: 'LK-03',  type: 'lk',  x: 50, y: 80, name: '스마트락커' },
+  { id: 'GATE-1', type: 'gate', x: 70, y: 80, name: '출입 게이트' },
+  { id: 'GATE-2', type: 'gate', x: 88, y: 80, name: '출입 게이트' },
+];
+
+const FAB_NODES_DENSE = [
+  ...FAB_NODES,
+  { id: 'BAY-06', type: 'bay', x: 12, y: 33, name: '공정 BAY' },
+  { id: 'BAY-07', type: 'bay', x: 50, y: 33, name: '공정 BAY' },
+  { id: 'BAY-08', type: 'bay', x: 88, y: 33, name: '공정 BAY' },
+  { id: 'EQ-C1',  type: 'eq',  x: 20, y: 64, name: '장비' },
+  { id: 'EQ-C2',  type: 'eq',  x: 40, y: 64, name: '장비' },
+  { id: 'EQ-C3',  type: 'eq',  x: 60, y: 64, name: '장비' },
+  { id: 'EQ-C4',  type: 'eq',  x: 80, y: 64, name: '장비' },
+];
+
+const FAB_NODES_SPARSE = FAB_NODES.filter(n =>
+  ['BAY-01','BAY-03','BAY-05','EQ-A1','EQ-B1','EQ-B3','LK-01','LK-02','GATE-1'].includes(n.id)
+);
+
+function getNodes(density) {
+  if (density === 'sparse') return FAB_NODES_SPARSE;
+  if (density === 'dense') return FAB_NODES_DENSE;
+  return FAB_NODES;
+}
+
+const FAB_ROBOTS = [
+  { id: 'AMR001', at: 'EQ-A2',  battery: 87, status: 'idle',     capabilities: ['call'],            payload: null },
+  { id: 'AMR002', at: 'BAY-04', battery: 64, status: 'idle',     capabilities: ['call', 'locker'],  payload: null },
+  { id: 'AMR003', at: 'EQ-B1',  battery: 41, status: 'charging', capabilities: ['call'],            payload: null },
+  { id: 'AMR004', at: 'LK-02',  battery: 92, status: 'idle',     capabilities: ['call', 'locker'],  payload: null },
+  { id: 'AMR005', at: 'GATE-1', battery: 78, status: 'idle',     capabilities: ['call'],            payload: null },
+  { id: 'AMR006', at: 'BAY-02', battery: 55, status: 'idle',     capabilities: ['call'],            payload: null },
+];
+
+function getRobots(count) { return FAB_ROBOTS.slice(0, count); }
+
+// 로봇에 현재 보관 중인 부품 목록});
+
+const HISTORY = [
+  { id: 'h0', kind: 'ride', from: 'BAY-02', to: 'EQ-A2',  robot: 'AMR001', item: '탑승 · BAY-02→EQ-A2',  when: '지금',      status: 'riding',    durationMin: null },
+  { id: 'h1', kind: 'ride', from: 'BAY-03', to: 'EQ-B2',  robot: 'AMR002', item: '탑승 · BAY-03→EQ-B2',  when: '오늘 09:12', status: 'done',      durationMin: 4 },
+  { id: 'h2', kind: 'ride', from: 'EQ-A1',  to: 'BAY-05', robot: 'AMR003', item: '탑승 · EQ-A1→BAY-05',  when: '오늘 08:47', status: 'done',      durationMin: 6 },
+  { id: 'h4', kind: 'ride', from: 'BAY-02', to: 'EQ-B3',  robot: 'AMR001', item: '탑승 · BAY-02→EQ-B3',  when: '어제 14:03', status: 'done',      durationMin: 5 },
+  { id: 'h5', kind: 'ride', from: 'GATE-1', to: 'BAY-04', robot: 'AMR005', item: '탑승 · GATE-1→BAY-04', when: '어제 11:30', status: 'cancelled', durationMin: null },
+];
+
+const THEMES = {
+  cobalt:   { deep: '#002F6C', core: '#0047AB', bright: '#3B82F6', sky: '#BFDBFE', surface: '#FAFCFE', bg: '#F2F6FB', ink: '#0E1A33', muted: '#5B6B85', border: '#E1E8F2', card: '#FFFFFF', name: 'Cobalt' },
+  forest:   { deep: '#0F3D2E', core: '#1E7A4D', bright: '#4CAF50', sky: '#C8E6C9', surface: '#FAFCFA', bg: '#F2F7F3', ink: '#102017', muted: '#5B6E62', border: '#DDE8DF', card: '#FFFFFF', name: 'Forest' },
+  ember:    { deep: '#5C1E0B', core: '#C2410C', bright: '#F97316', sky: '#FED7AA', surface: '#FDFBFA', bg: '#FAF4F0', ink: '#231512', muted: '#7A6A63', border: '#EDE0D8', card: '#FFFFFF', name: 'Ember' },
+  graphite: { deep: '#1F2937', core: '#4B5563', bright: '#6366F1', sky: '#E5E7EB', surface: '#FCFCFD', bg: '#F4F4F6', ink: '#111827', muted: '#6B7280', border: '#E5E7EB', card: '#FFFFFF', name: 'Graphite' },
+};
+const DARK_OVERLAY = { surface: '#0B1426', bg: '#070D1A', ink: '#E8EEF8', muted: '#8597B5', border: '#1B2843', card: '#0F1C36' };
+
+function getTheme(name, dark) {
+  const t = THEMES[name] || THEMES.cobalt;
+  if (!dark) return t;
+  return { ...t, ...DARK_OVERLAY };
+}
+
+Object.assign(window, { FAB_NODES, getNodes, FAB_ROBOTS, getRobots, HISTORY, THEMES, getTheme });
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════ map.jsx -->
+  <script type="text/babel">
+const { useState, useEffect, useRef, useMemo } = React;
+
+const MAP_W = 400, MAP_H = 280, MARGIN_X = 24, MARGIN_Y = 28;
+
+function nodeXY(node) {
+  return {
+    cx: MARGIN_X + (node.x / 100) * (MAP_W - 2 * MARGIN_X),
+    cy: MARGIN_Y + (node.y / 100) * (MAP_H - 2 * MARGIN_Y),
+  };
+}
+
+function manhattanPath(a, b) {
+  const midY = a.cy + (b.cy - a.cy) * 0.55;
+  return `M ${a.cx} ${a.cy} L ${a.cx} ${midY} L ${b.cx} ${midY} L ${b.cx} ${b.cy}`;
+}
+
+function pointOnManhattan(a, b, t) {
+  const midY = a.cy + (b.cy - a.cy) * 0.55;
+  const l1 = Math.abs(midY - a.cy), l2 = Math.abs(b.cx - a.cx), l3 = Math.abs(b.cy - midY);
+  const total = l1 + l2 + l3 || 1;
+  const d = t * total;
+  if (d <= l1) return { x: a.cx, y: a.cy + Math.sign(midY - a.cy) * d };
+  if (d <= l1 + l2) return { x: a.cx + Math.sign(b.cx - a.cx) * (d - l1), y: midY };
+  return { x: b.cx, y: midY + Math.sign(b.cy - midY) * (d - l1 - l2) };
+}
+
+function NodeTypeIcon({ type, theme, size = 5 }) {
+  if (type === 'bay') return null;
+  if (type === 'lk') return <rect x={-size*0.5} y={-size*0.6} width={size} height={size*1.2} fill="none" stroke={theme.card} strokeWidth="0.9" rx="0.6" />;
+  if (type === 'gate') return (<><line x1={-size*0.6} y1={-size*0.7} x2={-size*0.6} y2={size*0.7} stroke={theme.card} strokeWidth="1" strokeLinecap="round"/><line x1={size*0.6} y1={-size*0.7} x2={size*0.6} y2={size*0.7} stroke={theme.card} strokeWidth="1" strokeLinecap="round"/></>);
+  return <rect x={-size*0.5} y={-size*0.5} width={size} height={size} fill="none" stroke={theme.card} strokeWidth="0.9" />;
+}
+
+function FabMap({ nodes, robots, theme, sketchIntensity = 0.5, mode = 'select', selectable = 'all',
+  selectedId, departureId, arrivalId, currentLocId, activeRobotId, matchedRobotId,
+  routeProgress = 0, onNodeTap, highlightRecommend, filters = { rideable: false }, dark = false }) {
+
+  const isSelectable = (n) => {
+    if (typeof selectable === 'function') return selectable(n);
+    if (Array.isArray(selectable)) return selectable.includes(n.id);
+    if (selectable === 'bays-eqs') return n.type === 'bay' || n.type === 'eq';
+    if (selectable === 'lockers') return n.type === 'lk';
+    return true;
+  };
+
+  const filterId = useMemo(() => `sketch-${Math.random().toString(36).slice(2, 8)}`, []);
+  const scale = Math.max(0, Math.min(1, sketchIntensity)) * 1.8;
+
+  const activeRobot = robots.find(r => r.id === activeRobotId);
+  const depNode = nodes.find(n => n.id === departureId);
+  const arrNode = nodes.find(n => n.id === arrivalId);
+  const depXY = depNode && nodeXY(depNode);
+  const arrXY = arrNode && nodeXY(arrNode);
+
+  let robotPos = null;
+  if (mode === 'enroute' && depXY && arrXY) {
+    robotPos = pointOnManhattan(depXY, arrXY, routeProgress);
+  }
+
+  return (
+    <svg viewBox={`0 0 ${MAP_W} ${MAP_H}`} style={{ width: '100%', height: '100%', display: 'block', userSelect: 'none' }}>
+      <defs>
+        <filter id={filterId} x="-5%" y="-5%" width="110%" height="110%">
+          <feTurbulence type="fractalNoise" baseFrequency="0.022" numOctaves="2" seed="3" />
+          <feDisplacementMap in="SourceGraphic" scale={scale} />
+        </filter>
+        <pattern id={`dot-${filterId}`} width="8" height="8" patternUnits="userSpaceOnUse">
+          <circle cx="1" cy="1" r="0.7" fill={theme.border} opacity="0.7"/>
+        </pattern>
+      </defs>
+
+      <rect x="0" y="0" width={MAP_W} height={MAP_H} fill={dark ? theme.bg : theme.bg}/>
+      <rect x="0" y="0" width={MAP_W} height={MAP_H} fill={`url(#dot-${filterId})`}/>
+
+      <g filter={`url(#${filterId})`}>
+        <rect x="10" y="10" width={MAP_W-20} height={MAP_H-20} fill="none" stroke={theme.muted} strokeOpacity="0.35" strokeWidth="1.2" strokeDasharray="4 4" rx="6"/>
+        <line x1={MARGIN_X} y1={MAP_H*0.33} x2={MAP_W-MARGIN_X} y2={MAP_H*0.33} stroke={theme.muted} strokeOpacity="0.12" strokeWidth="14" strokeLinecap="round"/>
+        <line x1={MARGIN_X} y1={MAP_H*0.66} x2={MAP_W-MARGIN_X} y2={MAP_H*0.66} stroke={theme.muted} strokeOpacity="0.12" strokeWidth="14" strokeLinecap="round"/>
+      </g>
+
+      {depXY && arrXY && (mode === 'enroute' || mode === 'view') && (
+        <g filter={`url(#${filterId})`}>
+          <path d={manhattanPath(depXY, arrXY)} fill="none" stroke={theme.core} strokeWidth="2.4"
+            strokeDasharray={mode === 'enroute' ? '0' : '5 4'} strokeLinecap="round" strokeLinejoin="round" opacity="0.9"/>
+          {mode === 'enroute' && (
+            <path d={manhattanPath(depXY, arrXY)} fill="none" stroke={theme.bright} strokeWidth="2.4"
+              strokeDasharray="6 8" strokeLinecap="round" opacity="0.6">
+              <animate attributeName="stroke-dashoffset" from="0" to="-28" dur="1.2s" repeatCount="indefinite"/>
+            </path>
+          )}
+        </g>
+      )}
+
+      {nodes.map(n => {
+        const { cx, cy } = nodeXY(n);
+        const isSel = n.id === selectedId, isDep = n.id === departureId, isArr = n.id === arrivalId;
+        const isCur = n.id === currentLocId, tappable = isSelectable(n) && mode === 'select';
+        const recommended = highlightRecommend && highlightRecommend.includes(n.id);
+        let fill = theme.card, stroke = theme.muted, r = 9;
+        if (isDep) { fill = theme.core; stroke = theme.core; r = 11; }
+        else if (isArr) { fill = theme.bright; stroke = theme.bright; r = 11; }
+        else if (isSel) { fill = theme.core; stroke = theme.core; r = 11; }
+        else if (tappable) { stroke = theme.core; fill = dark ? theme.card : '#fff'; }
+        return (
+          <g key={n.id}>
+            <g filter={`url(#${filterId})`}>
+              {recommended && (
+                <circle cx={cx} cy={cy} r={r+6} fill="none" stroke={theme.bright} strokeWidth="1.4" strokeDasharray="3 3" opacity="0.7">
+                  <animateTransform attributeName="transform" type="rotate" from={`0 ${cx} ${cy}`} to={`360 ${cx} ${cy}`} dur="14s" repeatCount="indefinite"/>
+                </circle>
+              )}
+              {isCur && !isDep && !isArr && (
+                <>
+                  <circle cx={cx} cy={cy} r={r+4} fill={theme.bright} fillOpacity="0.18"/>
+                  <circle cx={cx} cy={cy} r={r+4} fill="none" stroke={theme.bright} strokeWidth="1.2" opacity="0.6">
+                    <animate attributeName="r" from={r+2} to={r+9} dur="1.8s" repeatCount="indefinite"/>
+                    <animate attributeName="opacity" from="0.6" to="0" dur="1.8s" repeatCount="indefinite"/>
+                  </circle>
+                </>
+              )}
+              <circle cx={cx} cy={cy} r={r} fill={fill} stroke={stroke}
+                strokeWidth={isSel || isDep || isArr ? 2 : 1.4}
+                style={{ cursor: tappable ? 'pointer' : 'default', transition: 'r 0.18s ease' }}/>
+              <g transform={`translate(${cx} ${cy})`}>
+                <NodeTypeIcon type={n.type} theme={isSel || isDep || isArr ? { card: '#fff' } : { card: theme.muted }} size={6}/>
+              </g>
+            </g>
+            {tappable && (
+              <circle cx={cx} cy={cy} r={18} fill="transparent" style={{ cursor: 'pointer' }}
+                onClick={(e) => { e.stopPropagation(); onNodeTap && onNodeTap(n); }}/>
+            )}
+            <text x={cx} y={cy+r+12} fontFamily="'JetBrains Mono', ui-monospace, monospace"
+              fontSize="9" fontWeight="500"
+              fill={isSel || isDep || isArr || isCur ? theme.deep : theme.muted}
+              textAnchor="middle" style={{ pointerEvents: 'none' }}>{n.id}</text>
+          </g>
+        );
+      })}
+
+      {robots.map(r => {
+        if (mode === 'enroute' && r.id === activeRobotId) return null;
+        const atNode = nodes.find(n => n.id === r.at);
+        if (!atNode) return null;
+        const { cx, cy } = nodeXY(atNode);
+        const ox = cx + 19, oy = cy - 12;
+        const GRAY = '#94A3B8';
+        const focusedId = matchedRobotId || activeRobotId;
+        const isIdle = r.status === 'idle';
+        const isInUse = !isIdle;
+        let bg, fg;
+        if (focusedId) {
+          if (r.id === focusedId) { bg = (filters.rideable && isIdle) ? theme.core : theme.deep; fg = '#fff'; }
+          else { bg = GRAY; fg = '#fff'; }
+        } else if (isInUse) { bg = GRAY; fg = '#fff'; }
+        else if (filters.rideable && isIdle) { bg = theme.core; fg = '#fff'; }
+        else { bg = theme.deep; fg = '#fff'; }
+        return (
+          <g key={r.id} style={{ pointerEvents: 'none' }}>
+            <g filter={`url(#${filterId})`}>
+              <line x1={cx+6} y1={cy-6} x2={ox-17} y2={oy+2} stroke={bg} strokeWidth="0.8" opacity="0.4"/>
+              <rect x={ox-19} y={oy-7.5} width="38" height="15" rx="3" fill={bg} stroke={theme.card} strokeWidth="1"/>
+              <g transform={`translate(${ox-12} ${oy})`}>
+                <line x1="0" y1="-4.5" x2="0" y2="-3" stroke={fg} strokeWidth="0.7" strokeLinecap="round"/>
+                <circle cx="0" cy="-4.6" r="0.7" fill={fg}/>
+                <rect x="-2.6" y="-3" width="5.2" height="4.4" rx="0.9" fill="none" stroke={fg} strokeWidth="0.7"/>
+                <circle cx="-1" cy="-1.1" r="0.6" fill={fg}/>
+                <circle cx="1" cy="-1.1" r="0.6" fill={fg}/>
+                <line x1="-2.6" y1="2.2" x2="2.6" y2="2.2" stroke={fg} strokeWidth="0.6"/>
+              </g>
+              <text x={ox+4} y={oy+2.4} fontFamily="'JetBrains Mono', monospace"
+                fontSize="6.5" fontWeight="700" fill={fg} textAnchor="middle">{r.id}</text>
+            </g>
+          </g>
+        );
+      })}
+
+      {robotPos && activeRobot && (
+        <g style={{ pointerEvents: 'none' }}>
+          <circle cx={robotPos.x} cy={robotPos.y} r="14" fill={theme.bright} fillOpacity="0.18">
+            <animate attributeName="r" from="10" to="18" dur="1.2s" repeatCount="indefinite"/>
+            <animate attributeName="fill-opacity" from="0.3" to="0" dur="1.2s" repeatCount="indefinite"/>
+          </circle>
+          <g filter={`url(#${filterId})`}>
+            <rect x={robotPos.x-20} y={robotPos.y-8.5} width="40" height="17" rx="3.5" fill={theme.bright} stroke={theme.card} strokeWidth="1.2"/>
+            <g transform={`translate(${robotPos.x-12} ${robotPos.y})`}>
+              <line x1="0" y1="-5" x2="0" y2="-3.5" stroke="#fff" strokeWidth="0.8" strokeLinecap="round"/>
+              <circle cx="0" cy="-5.2" r="0.8" fill="#fff"/>
+              <rect x="-3" y="-3.5" width="6" height="5" rx="1" fill="none" stroke="#fff" strokeWidth="0.8"/>
+              <circle cx="-1.2" cy="-1.3" r="0.7" fill="#fff"/>
+              <circle cx="1.2" cy="-1.3" r="0.7" fill="#fff"/>
+              <line x1="-3" y1="2.5" x2="3" y2="2.5" stroke="#fff" strokeWidth="0.7"/>
+            </g>
+            <text x={robotPos.x+5} y={robotPos.y+2.6} fontFamily="'JetBrains Mono', monospace"
+              fontSize="7" fontWeight="700" fill="#fff" textAnchor="middle">{activeRobot.id}</text>
+          </g>
+        </g>
+      )}
+    </svg>
+  );
+}
+
+Object.assign(window, { FabMap, nodeXY, manhattanPath });
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════ screens.jsx -->
+  <script type="text/babel">
+const { useState: useStateD, useEffect: useEffectD } = React;
+
+function RideBanner({ theme }) {
+  return (
+    <div style={{ padding: '12px 16px 0' }}>
+      <div style={{
+        display: 'flex', alignItems: 'center', gap: 10,
+        padding: '12px 16px',
+        background: theme.sky,
+        borderRadius: 14,
+        boxShadow: `inset 0 0 0 1.2px ${theme.core}22`,
+      }}>
+        <div style={{ fontSize: 20 }}>🤖</div>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: theme.deep, letterSpacing: '-0.02em', lineHeight: 1 }}>
+            원하는 장소로 이동해보세요!
+          </div>
+          <div style={{ fontSize: 12, color: theme.muted, marginTop: 3 }}>출발지와 목적지를 선택한 후, 로봇을 호출하세요.</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StepIndicator({ step, departure, arrival, theme }) {
+  const steps = [
+    { id: 'departure', label: '출발', value: departure },
+    { id: 'arrival',   label: '도착', value: arrival },
+    { id: 'call',      label: '호출' },
+  ];
+  const activeIdx = steps.findIndex(s => s.id === step);
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '14px 14px 10px' }}>
+      {steps.map((s, i) => {
+        const active = i === activeIdx, done = i < activeIdx;
+        const bg = active ? theme.core : done ? theme.sky : 'transparent';
+        const fg = active ? '#fff' : done ? theme.core : theme.muted;
+        const stroke = active ? theme.core : done ? theme.sky : theme.border;
+        return (
+          <React.Fragment key={s.id}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '5px 9px 5px 4px', borderRadius: 999,
+              background: bg, boxShadow: `inset 0 0 0 1.4px ${stroke}`, whiteSpace: 'nowrap', flexShrink: 0 }}>
+              <div style={{ width: 20, height: 20, borderRadius: '50%',
+                background: active ? '#fff' : done ? theme.core : 'transparent',
+                color: active ? theme.core : done ? '#fff' : theme.muted,
+                boxShadow: !active && !done ? `inset 0 0 0 1.4px ${theme.border}` : 'none',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 11, fontWeight: 700 }}>
+                {done ? '✓' : i + 1}
+              </div>
+              <span style={{ fontSize: 13, fontWeight: 600, color: fg, letterSpacing: '-0.01em' }}>{s.label}</span>
+              {s.value && (
+                <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11.5, fontWeight: 700,
+                  padding: '1.5px 6px', borderRadius: 5,
+                  background: active ? 'rgba(255,255,255,0.22)' : 'rgba(0,47,108,0.08)',
+                  color: active ? '#fff' : theme.deep, letterSpacing: 0 }}>{s.value}</span>
+              )}
+            </div>
+            {i < steps.length - 1 && <div style={{ flex: 'none', color: theme.muted, fontSize: 12 }}>→</div>}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+}
+
+function MapFilters({ filters, onToggle, robots, theme }) {
+  const rideableCount = robots.filter(r => r.status === 'idle').length;
+  const active = filters.rideable;
+  return (
+    <div style={{ display: 'flex', justifyContent: 'flex-end', padding: '8px 14px 4px' }}>
+      <button onClick={() => onToggle('rideable')} style={{
+        padding: '7px 12px', borderRadius: 999, border: 'none', cursor: 'pointer', fontFamily: 'inherit',
+        background: active ? theme.core : 'transparent', color: active ? '#fff' : theme.muted,
+        boxShadow: active ? `inset 0 0 0 1.4px ${theme.core}` : 'none',
+        display: 'inline-flex', alignItems: 'center', justifyContent: 'center', gap: 7,
+        fontSize: 11.5, fontWeight: 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap',
+        transition: 'all 0.18s', opacity: active ? 1 : 0.85 }}>
+        <span>탑승 가능 로봇</span>
+        <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, fontWeight: 700,
+          color: active ? '#fff' : theme.muted, padding: '1px 6px', borderRadius: 999,
+          background: active ? 'rgba(255,255,255,0.22)' : 'transparent',
+          boxShadow: !active ? `inset 0 0 0 1px ${theme.border}` : 'none', flexShrink: 0 }}>{rideableCount}</span>
+      </button>
+    </div>
+  );
+}
+
+function MapHeader({ title, subtitle, badge, theme }) {
+  return (
+    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', padding: '12px 14px 0', gap: 8 }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: theme.muted, fontWeight: 500, letterSpacing: '0.04em', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 12, color: theme.muted, marginTop: 2, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{subtitle}</div>}
+      </div>
+      {badge}
+    </div>
+  );
+}
+
+function MapBadge({ children, theme, dotColor }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 6, padding: '4px 9px', borderRadius: 999,
+      background: theme.card, boxShadow: `inset 0 0 0 1px ${theme.border}`,
+      fontSize: 11, fontWeight: 600, color: theme.deep, whiteSpace: 'nowrap', flexShrink: 0 }}>
+      <div style={{ width: 7, height: 7, borderRadius: 2, background: dotColor || theme.core, flexShrink: 0 }}/>
+      {children}
+    </div>
+  );
+}
+
+function MapZoomControls({ theme }) {
+  const btn = (label) => (
+    <button style={{ width: 36, height: 36, border: 'none', cursor: 'pointer',
+      background: theme.card, color: theme.deep, fontSize: 18, fontWeight: 600,
+      fontFamily: 'inherit', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>{label}</button>
+  );
+  return (
+    <div style={{ position: 'absolute', right: 12, bottom: 12, display: 'flex', flexDirection: 'column',
+      borderRadius: 10, overflow: 'hidden',
+      boxShadow: `0 2px 8px ${theme.deep}15, inset 0 0 0 1px ${theme.border}` }}>
+      {btn('+')}
+      <div style={{ height: 1, background: theme.border }}/>
+      {btn('−')}
+    </div>
+  );
+}
+
+function MapContainer({ children, theme }) {
+  return (
+    <div style={{ margin: '10px 16px 0', borderRadius: 16, background: theme.bg,
+      boxShadow: `inset 0 0 0 1.2px ${theme.border}`, position: 'relative', overflow: 'hidden' }}>
+      {children}
+    </div>
+  );
+}
+
+function ActionCard({ icon, title, subtitle, action, theme, accent }) {
+  return (
+    <div style={{ margin: '12px 16px 16px', padding: '14px 16px', borderRadius: 14, background: theme.card,
+      boxShadow: `inset 0 0 0 1.2px ${theme.border}`, display: 'flex', alignItems: 'center', gap: 12 }}>
+      {icon && (
+        <div style={{ width: 38, height: 38, borderRadius: 10, flexShrink: 0,
+          background: accent || theme.sky, color: theme.deep,
+          display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 20 }}>{icon}</div>
+      )}
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: theme.deep, letterSpacing: '-0.01em', lineHeight: 1.3 }}>{title}</div>
+        {subtitle && <div style={{ fontSize: 12, color: theme.muted, marginTop: 2, lineHeight: 1.4 }}>{subtitle}</div>}
+      </div>
+      {action}
+    </div>
+  );
+}
+
+function PrimaryButton({ children, onClick, theme, disabled, full, variant = 'primary' }) {
+  const bg = disabled ? theme.border : variant === 'primary' ? theme.core : variant === 'danger' ? '#DC2626' : 'transparent';
+  const fg = disabled ? theme.muted : variant === 'primary' || variant === 'danger' ? '#fff' : theme.core;
+  return (
+    <button onClick={onClick} disabled={disabled} style={{
+      background: bg, color: fg,
+      border: variant === 'ghost' ? `1.4px solid ${theme.border}` : 'none',
+      padding: full ? '14px 16px' : '10px 16px', borderRadius: 12,
+      fontSize: 15, fontWeight: 700, fontFamily: 'inherit', letterSpacing: '-0.01em',
+      cursor: disabled ? 'not-allowed' : 'pointer', width: full ? '100%' : 'auto',
+      whiteSpace: 'nowrap', transition: 'transform 0.08s, opacity 0.15s' }}
+      onMouseDown={e => !disabled && (e.currentTarget.style.transform = 'scale(0.98)')}
+      onMouseUp={e => (e.currentTarget.style.transform = 'scale(1)')}
+      onMouseLeave={e => (e.currentTarget.style.transform = 'scale(1)')}>{children}</button>
+  );
+}
+
+function PointIcon({ theme }) {
+  return (
+    <svg width="22" height="22" viewBox="0 0 24 24" fill="none">
+      <path d="M9 3.5v8M9 11.5V8.5M12 8v3.5M15 9v2.5M18 11v3a6 6 0 0 1-6 6h-1a5 5 0 0 1-5-5v-1l-2-4 1.5-1.2 2.5 2.5V5a1.5 1.5 0 0 1 3 0v6"
+        stroke={theme.deep} strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round"/>
+    </svg>
+  );
+}
+
+function RouteChip({ label, code, color, onReset, theme }) {
+  return (
+    <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 8, padding: '8px 8px 8px 10px',
+      borderRadius: 10, background: theme.bg, boxShadow: `inset 0 0 0 1.4px ${color}`, minWidth: 0 }}>
+      <div style={{ width: 8, height: 8, borderRadius: '50%', background: color, boxShadow: `0 0 0 3px ${color}22`, flexShrink: 0 }}/>
+      <div style={{ flex: 1, minWidth: 0 }}>
+        <div style={{ fontSize: 10, fontWeight: 600, color: theme.muted, letterSpacing: '-0.01em' }}>{label}</div>
+        <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: theme.deep,
+          lineHeight: 1.1, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{code}</div>
+      </div>
+      <button onClick={onReset} style={{ width: 22, height: 22, border: 'none', borderRadius: '50%',
+        background: theme.card, color: theme.muted, cursor: 'pointer',
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        fontFamily: 'inherit', fontSize: 11, fontWeight: 700, flexShrink: 0,
+        boxShadow: `inset 0 0 0 1px ${theme.border}` }}>✕</button>
+    </div>
+  );
+}
+
+function DepartureScreen({ ctx }) {
+  const { state, setState, theme, nodes, robots, currentLoc } = ctx;
+  const recs = [currentLoc, nodes.find(n => n.id !== currentLoc && n.type === 'bay')?.id].filter(Boolean);
+  const toggleFilter = (k) => setState({ ...state, filters: { ...state.filters, [k]: !state.filters[k] } });
+  return (
+    <>
+      <RideBanner theme={theme}/>
+      <StepIndicator step="departure" departure={state.departure} arrival={state.arrival} theme={theme}/>
+      <MapContainer theme={theme}>
+        <MapHeader title={`P3 7F · 정류장 ${nodes.length}개`} subtitle="출발지를 탭하세요" theme={theme}/>
+        <MapFilters filters={state.filters} onToggle={toggleFilter} robots={robots} theme={theme}/>
+        <div style={{ height: 260 }}>
+          <FabMap nodes={nodes} robots={robots} filters={state.filters} theme={theme}
+            sketchIntensity={state.sketchIntensity} mode="select" currentLocId={currentLoc}
+            selectedId={state.departure} highlightRecommend={recs}
+            onNodeTap={(n) => setState({ ...state, departure: n.id, step: 'arrival' })}
+            dark={state.dark}/>
+        </div>
+        <MapZoomControls theme={theme}/>
+      </MapContainer>
+      <ActionCard icon={<PointIcon theme={theme}/>} title="원하는 출발지를 탭해주세요"
+        subtitle={`현재 위치 ${currentLoc} 부근 · 자동 추천`} theme={theme}/>
+    </>
+  );
+}
+
+function ArrivalScreen({ ctx }) {
+  const { state, setState, theme, nodes, robots } = ctx;
+  const toggleFilter = (k) => setState({ ...state, filters: { ...state.filters, [k]: !state.filters[k] } });
+  const hasArrival = !!state.arrival;
+  const resetDeparture = () => setState({ ...state, departure: null, arrival: null, step: 'departure' });
+  const resetArrival = () => setState({ ...state, arrival: null });
+
+  const canCall = hasArrival;
+
+  return (
+    <>
+      <RideBanner theme={theme}/>
+      <StepIndicator step="arrival" departure={state.departure} arrival={state.arrival} theme={theme}/>
+      <MapContainer theme={theme}>
+        <MapHeader title={hasArrival ? `${state.departure} → ${state.arrival}` : `출발 · ${state.departure}`}
+          subtitle={hasArrival ? '아래에서 로봇을 호출하거나, 노드를 다시 탭하면 재선택' : '목적지를 선택하세요'}
+          theme={theme}/>
+        <MapFilters filters={state.filters} onToggle={toggleFilter} robots={robots} theme={theme}/>
+        <div style={{ height: 234 }}>
+          <FabMap nodes={nodes} robots={robots} filters={state.filters} theme={theme}
+            sketchIntensity={state.sketchIntensity} mode="select"
+            departureId={state.departure} arrivalId={state.arrival}
+            selectable={() => true}
+            onNodeTap={(n) => {
+              if (n.id === state.departure) resetDeparture();
+              else if (n.id === state.arrival) resetArrival();
+              else setState({ ...state, arrival: n.id });
+            }} dark={state.dark}/>
+        </div>
+        <MapZoomControls theme={theme}/>
+      </MapContainer>
+
+      <div style={{ margin: '12px 16px 16px', padding: '14px 14px', borderRadius: 14, background: theme.card,
+        boxShadow: `inset 0 0 0 1.2px ${theme.border}` }}>
+
+        {/* 출발 / 도착 Route chips */}
+        <div style={{ display: 'flex', alignItems: 'stretch', gap: 8, marginBottom: 14 }}>
+          <RouteChip label="출발" code={state.departure} color={theme.core} onReset={resetDeparture} theme={theme}/>
+          <div style={{ display: 'flex', alignItems: 'center', color: theme.muted, fontSize: 14, padding: '0 2px' }}>→</div>
+          {hasArrival ? (
+            <RouteChip label="목적지" code={state.arrival} color={theme.bright} onReset={resetArrival} theme={theme}/>
+          ) : (
+            <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center',
+              padding: '8px 10px', borderRadius: 10, boxShadow: `inset 0 0 0 1.4px ${theme.border}`,
+              fontSize: 12, color: theme.muted, fontWeight: 600 }}>목적지 선택</div>
+          )}
+        </div>
+
+        {/* 호출 버튼 */}
+        {canCall ? (
+          <PrimaryButton variant="primary" theme={theme} full
+            onClick={() => setState({ ...state, step: 'dispatching' })}>
+            🤖  로봇을 호출할게요!
+          </PrimaryButton>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center',
+            padding: '12px 10px', borderRadius: 12, background: theme.bg,
+            fontSize: 13, color: theme.muted, fontWeight: 600, letterSpacing: '-0.01em' }}>
+            목적지를 선택해주세요
+          </div>
+        )}
+      </div>
+    </>
+  );
+}
+
+function DispatchingScreen({ ctx }) {
+  const { state, setState, theme, nodes, robots } = ctx;
+  const [phase, setPhase] = useStateD(0);
+  const [matchedId, setMatchedId] = useStateD(null);
+
+  useEffectD(() => {
+    const t1 = setTimeout(() => setPhase(1), 1300);
+    const t2 = setTimeout(() => {
+      const idle = robots.find(r => r.status === 'idle');
+      const id = idle ? idle.id : robots[0].id;
+      setMatchedId(id);
+      setPhase(2);
+    }, 2600);
+    return () => { clearTimeout(t1); clearTimeout(t2); };
+  }, []);
+
+  // 매칭 완료 즉시 자동 출발
+  useEffectD(() => {
+    if (phase === 2 && matchedId) {
+      const t = setTimeout(() => {
+        setState({ ...state, step: 'enroute-dep', activeRobot: matchedId, routeProgress: 0 });
+      }, 800);
+      return () => clearTimeout(t);
+    }
+  }, [phase, matchedId]);
+
+  const phaseLabel = ['주변 로봇 스캔 중', '최적 로봇 매칭 중', '매칭 완료 · 자동 출발'][phase];
+
+  return (
+    <>
+      <RideBanner theme={theme}/>
+      <StepIndicator step="call" departure={state.departure} arrival={state.arrival} theme={theme}/>
+      <MapContainer theme={theme}>
+        <MapHeader title={`${state.departure} → ${state.arrival}`} subtitle={phaseLabel}
+          badge={<MapBadge theme={theme} dotColor={phase < 2 ? '#F59E0B' : theme.bright}>
+            {phase < 2 ? '로봇 찾는 중' : '출발 중'}
+          </MapBadge>} theme={theme}/>
+        <div style={{ height: 280 }}>
+          <FabMap nodes={nodes} robots={robots} theme={theme} sketchIntensity={state.sketchIntensity}
+            mode="view" departureId={state.departure} arrivalId={state.arrival}
+            matchedRobotId={matchedId} dark={state.dark}/>
+        </div>
+      </MapContainer>
+
+      <div style={{ margin: '12px 16px 16px', padding: '16px', borderRadius: 14, background: theme.card,
+        boxShadow: `inset 0 0 0 1.2px ${theme.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
+          {phase < 2 ? (
+            <div style={{ width: 32, height: 32, borderRadius: '50%', flexShrink: 0,
+              background: `conic-gradient(${theme.core} 0deg, ${theme.core} 90deg, ${theme.sky} 90deg)`,
+              animation: 'spin 1.2s linear infinite' }}/>
+          ) : (
+            <div style={{ width: 44, height: 28, borderRadius: 6, background: theme.bright, color: '#fff', flexShrink: 0,
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              fontFamily: "'JetBrains Mono', monospace", fontWeight: 700, fontSize: 13 }}>{matchedId}</div>
+          )}
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 15, fontWeight: 700, color: theme.deep }}>{phaseLabel}</div>
+            <div style={{ fontSize: 12, color: theme.muted, marginTop: 2 }}>
+              {phase < 2
+                ? `P3 7F · ${robots.length}대 중 가용 로봇 확인 중`
+                : `${matchedId} · 출발지로 이동 시작`}
+            </div>
+          </div>
+          {phase === 2 && matchedId && (
+            <div style={{ fontSize: 11, color: theme.muted, fontFamily: "'JetBrains Mono', monospace", flexShrink: 0 }}>
+              BAT {robots.find(r => r.id === matchedId)?.battery}%
+            </div>
+          )}
+        </div>
+
+
+
+        <PrimaryButton variant="ghost" theme={theme} full
+          onClick={() => setState({ ...state, step: 'arrival', arrival: null })}>취소</PrimaryButton>
+      </div>
+    </>
+  );
+}
+
+// ─── 로봇 → 출발지 이동 중 ──────────────────────────────────
+function EnRouteDepScreen({ ctx }) {
+  const { state, setState, theme, nodes, robots } = ctx;
+  const totalSec = 60;
+  const remain = Math.max(0, totalSec - Math.round(state.routeProgress * totalSec));
+  const mm = Math.floor(remain / 60), ss = String(remain % 60).padStart(2, '0');
+  const robotObj = robots.find(r => r.id === state.activeRobot);
+
+  useEffectD(() => {
+    if (state.routeProgress >= 1) {
+      const t = setTimeout(() => setState({ ...state, step: 'at-departure' }), 600);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setState({ ...state, routeProgress: Math.min(1, state.routeProgress + 1/totalSec) }), 1000);
+    return () => clearTimeout(t);
+  }, [state.routeProgress]);
+
+  return (
+    <>
+      <RideBanner theme={theme}/>
+      <StepIndicator step="call" departure={state.departure} arrival={state.arrival} theme={theme}/>
+      <MapContainer theme={theme}>
+        <MapHeader title={`${state.activeRobot} → ${state.departure}`}
+          subtitle={`출발지로 이동 중 · ${Math.round(state.routeProgress * 100)}% 경과`}
+          badge={<MapBadge theme={theme} dotColor={theme.bright}>LIVE</MapBadge>} theme={theme}/>
+        <div style={{ height: 280 }}>
+          <FabMap nodes={nodes} robots={robots} theme={theme} sketchIntensity={state.sketchIntensity}
+            mode="enroute" departureId={robotObj?.at} arrivalId={state.departure}
+            activeRobotId={state.activeRobot} routeProgress={state.routeProgress} dark={state.dark}/>
+        </div>
+      </MapContainer>
+      <div style={{ margin: '12px 16px 16px', padding: '14px 16px', borderRadius: 14, background: theme.card,
+        boxShadow: `inset 0 0 0 1.2px ${theme.border}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: theme.muted, fontWeight: 600 }}>출발지 도착까지</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 32, fontWeight: 700,
+              color: theme.deep, letterSpacing: '-0.02em', lineHeight: 1, marginTop: 4 }}>{mm}:{ss}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 12, color: theme.muted }}>{state.activeRobot}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color: theme.deep, marginTop: 2 }}>BAT {robotObj?.battery}%</div>
+          </div>
+        </div>
+        <div style={{ height: 6, background: theme.border, borderRadius: 3, overflow: 'hidden', marginBottom: 12 }}>
+          <div style={{ height: '100%', width: `${state.routeProgress * 100}%`,
+            background: `linear-gradient(90deg, ${theme.core}, ${theme.bright})`,
+            borderRadius: 3, transition: 'width 0.6s linear' }}/>
+        </div>
+        <div style={{ display: 'flex', gap: 8 }}>
+          <PrimaryButton variant="ghost" theme={theme}
+            onClick={() => setState({ ...state, step: 'departure', departure: null, arrival: null, activeRobot: null, routeProgress: 0 })}>
+            호출 취소
+          </PrimaryButton>
+          <div style={{ flex: 1 }}>
+            <PrimaryButton variant="primary" theme={theme} full
+              onClick={() => setState({ ...state, routeProgress: 1 })}>스킵 → 도착</PrimaryButton>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+}
+
+// ─── 출발지에 로봇 도착 / 물품 적재 ─────────────────────────
+function AtDepartureScreen({ ctx }) {
+  const { state, setState, theme, nodes, robots } = ctx;
+  const robotObj = robots.find(r => r.id === state.activeRobot);
+  return (
+    <>
+      <RideBanner theme={theme}/>
+      <StepIndicator step="call" departure={state.departure} arrival={state.arrival} theme={theme}/>
+
+      <div style={{ margin: '14px 16px 0', padding: '20px 18px', borderRadius: 16,
+        background: theme.core, color: '#fff', position: 'relative', overflow: 'hidden' }}>
+        <div style={{ position: 'absolute', right: -30, top: -30, width: 130, height: 130,
+          borderRadius: '50%', background: theme.bright, opacity: 0.25 }}/>
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px',
+            borderRadius: 999, background: 'rgba(255,255,255,0.18)', fontSize: 11, fontWeight: 700 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }}/>출발지 도착
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 700, marginTop: 12, lineHeight: 1.3 }}>
+            출발지에 로봇이<br/>도착했어요
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 12,
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 600 }}>
+            <span>{state.activeRobot}</span>
+            <span style={{ opacity: 0.5 }}>·</span>
+            <span>{state.departure}</span>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ margin: '12px 16px 0', padding: '14px 16px', borderRadius: 14, background: theme.card,
+        boxShadow: `inset 0 0 0 1.2px ${theme.border}` }}>
+        <div style={{ fontSize: 13, fontWeight: 600, color: theme.muted, marginBottom: 10 }}>탑승 안내</div>
+        {[
+          ['1', `선택한 출발지 ${state.departure} 정류장으로 이동하세요`],
+          ['2', '로봇이 완전히 정지한 것을 확인하고 탑승해주세요'],
+        ].map(([n, label]) => (
+          <div key={n} style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '6px 0' }}>
+            <div style={{ width: 22, height: 22, borderRadius: 7, background: theme.sky, color: theme.deep,
+              fontWeight: 700, fontSize: 11, fontFamily: "'JetBrains Mono', monospace",
+              display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>{n}</div>
+            <div style={{ fontSize: 13.5, color: theme.deep, lineHeight: 1.4 }}>{label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div style={{ margin: '12px 16px 16px' }}>
+        <PrimaryButton variant="primary" theme={theme} full
+          onClick={() => setState({ ...state, step: 'enroute-arr', routeProgress: 0 })}>
+          완료 · 탑승 완료
+        </PrimaryButton>
+      </div>
+    </>
+  );
+}
+
+// ─── 로봇 → 도착지 이동 중 ──────────────────────────────────
+function EnRouteArrScreen({ ctx }) {
+  const { state, setState, theme, nodes, robots } = ctx;
+  const totalSec = 90;
+  const remain = Math.max(0, totalSec - Math.round(state.routeProgress * totalSec));
+  const mm = Math.floor(remain / 60), ss = String(remain % 60).padStart(2, '0');
+  const robotObj = robots.find(r => r.id === state.activeRobot);
+
+  useEffectD(() => {
+    if (state.routeProgress >= 1) {
+      const t = setTimeout(() => setState({ ...state, step: 'at-arrival' }), 600);
+      return () => clearTimeout(t);
+    }
+    const t = setTimeout(() => setState({ ...state, routeProgress: Math.min(1, state.routeProgress + 1/totalSec) }), 1000);
+    return () => clearTimeout(t);
+  }, [state.routeProgress]);
+
+  return (
+    <>
+      <RideBanner theme={theme}/>
+      <StepIndicator step="call" departure={state.departure} arrival={state.arrival} theme={theme}/>
+      <MapContainer theme={theme}>
+        <MapHeader title={`${state.departure} → ${state.arrival}`}
+          subtitle={`${state.activeRobot} 이동 중 · ${Math.round(state.routeProgress * 100)}% 경과`}
+          badge={<MapBadge theme={theme} dotColor={theme.bright}>LIVE</MapBadge>} theme={theme}/>
+        <div style={{ height: 280 }}>
+          <FabMap nodes={nodes} robots={robots} theme={theme} sketchIntensity={state.sketchIntensity}
+            mode="enroute" departureId={state.departure} arrivalId={state.arrival}
+            activeRobotId={state.activeRobot} routeProgress={state.routeProgress} dark={state.dark}/>
+        </div>
+      </MapContainer>
+      <div style={{ margin: '12px 16px 16px', padding: '14px 16px', borderRadius: 14, background: theme.card,
+        boxShadow: `inset 0 0 0 1.2px ${theme.border}` }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 12 }}>
+          <div>
+            <div style={{ fontSize: 12, color: theme.muted, fontWeight: 600 }}>목적지까지</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 32, fontWeight: 700,
+              color: theme.deep, letterSpacing: '-0.02em', lineHeight: 1, marginTop: 4 }}>{mm}:{ss}</div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 12, color: theme.muted }}>{state.activeRobot}</div>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 14, fontWeight: 700, color: theme.deep, marginTop: 2 }}>BAT {robotObj?.battery}%</div>
+          </div>
+        </div>
+        <div style={{ height: 6, background: theme.border, borderRadius: 3, overflow: 'hidden', marginBottom: 12 }}>
+          <div style={{ height: '100%', width: `${state.routeProgress * 100}%`,
+            background: `linear-gradient(90deg, ${theme.core}, ${theme.bright})`,
+            borderRadius: 3, transition: 'width 0.6s linear' }}/>
+        </div>
+        <PrimaryButton variant="primary" theme={theme} full
+          onClick={() => setState({ ...state, routeProgress: 1 })}>스킵 → 도착</PrimaryButton>
+      </div>
+    </>
+  );
+}
+
+// ─── 도착지에 로봇 도착 / 수령 확인 ─────────────────────────
+function AtArrivalScreen({ ctx }) {
+  const { state, setState, theme, pushHistory } = ctx;
+  const [phase, setPhase] = useStateD(0); // 0: 확인 중, 1: 수령 완료
+
+  useEffectD(() => {
+    const t = setTimeout(() => setPhase(1), 3000);
+    return () => clearTimeout(t);
+  }, []);
+
+  const handleDone = () => {
+    pushHistory && pushHistory({ kind: 'ride', from: state.departure, to: state.arrival,
+      robot: state.activeRobot, item: `탑승 · ${state.departure}→${state.arrival}`, when: '방금', status: 'done', durationMin: 4 });
+    setState({ ...state, step: 'departure', departure: null, arrival: null,
+      activeRobot: null, routeProgress: 0 });
+  };
+
+  return (
+    <>
+      <RideBanner theme={theme}/>
+      <StepIndicator step="call" departure={state.departure} arrival={state.arrival} theme={theme}/>
+
+      <div style={{ margin: '14px 16px 0', padding: '20px 18px', borderRadius: 16, color: '#fff',
+        background: phase === 1 ? theme.bright : theme.core,
+        position: 'relative', overflow: 'hidden', transition: 'background 0.6s ease' }}>
+        <div style={{ position: 'absolute', right: -30, top: -30, width: 130, height: 130,
+          borderRadius: '50%', background: '#fff', opacity: 0.12 }}/>
+        <div style={{ position: 'relative' }}>
+          <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 10px',
+            borderRadius: 999, background: 'rgba(255,255,255,0.2)', fontSize: 11, fontWeight: 700 }}>
+            <div style={{ width: 6, height: 6, borderRadius: '50%', background: '#fff' }}/>도착지 도착
+          </div>
+          <div style={{ fontSize: 24, fontWeight: 700, marginTop: 12, lineHeight: 1.3 }}>
+            도착지에 로봇이<br/>도착했어요
+          </div>
+          {/* 하차 상태 */}
+          <div style={{ marginTop: 14, display: 'flex', alignItems: 'center', gap: 10,
+            padding: '10px 14px', borderRadius: 12, background: 'rgba(255,255,255,0.15)' }}>
+            <div style={{ fontSize: 20 }}>{phase === 1 ? '✅' : '⏳'}</div>
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 700 }}>
+                {phase === 1 ? '하차가 완료됐어요!' : '로봇 정지 대기 중이에요'}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style={{ margin: '12px 16px 0', padding: '14px 16px', borderRadius: 14, background: theme.card,
+        boxShadow: `inset 0 0 0 1.2px ${theme.border}` }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12, color: theme.muted, fontWeight: 600 }}>탑승 경로</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4,
+              fontFamily: "'JetBrains Mono', monospace", fontSize: 13, fontWeight: 700, color: theme.deep }}>
+              <span>{state.departure}</span>
+              <span style={{ color: theme.muted, fontWeight: 400 }}>→</span>
+              <span>{state.arrival}</span>
+            </div>
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 12, color: theme.muted }}>{state.activeRobot}</div>
+          </div>
+        </div>
+      </div>
+
+      {phase === 1 && (
+        <div style={{ margin: '12px 16px 16px', display: 'flex', gap: 8 }}>
+          <PrimaryButton variant="ghost" theme={theme}
+            onClick={() => setState({ ...state, step: 'departure', departure: null, arrival: null,
+              activeRobot: null, routeProgress: 0 })}>
+            새 탑승
+          </PrimaryButton>
+          <div style={{ flex: 1 }}>
+            <PrimaryButton variant="primary" theme={theme} full onClick={handleDone}>완료</PrimaryButton>
+          </div>
+        </div>
+      )}
+
+      {phase === 0 && (
+        <div style={{ margin: '12px 16px 16px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          gap: 8, padding: '14px', borderRadius: 12, background: theme.bg }}>
+          <div style={{ width: 16, height: 16, borderRadius: '50%',
+            background: `conic-gradient(${theme.core} 0deg, ${theme.core} 90deg, ${theme.sky} 90deg)`,
+            animation: 'spin 1s linear infinite', flexShrink: 0 }}/>
+          <div style={{ fontSize: 13, color: theme.muted, fontWeight: 600 }}>로봇 정지 확인 대기 중…</div>
+        </div>
+      )}
+    </>
+  );
+}
+
+Object.assign(window, { RideBanner, StepIndicator, MapHeader, MapBadge, MapContainer, MapZoomControls,
+  MapFilters, ActionCard, PrimaryButton, PointIcon, DepartureScreen, ArrivalScreen,
+  DispatchingScreen, EnRouteDepScreen, AtDepartureScreen, EnRouteArrScreen, AtArrivalScreen });
+  </script>
+
+
+  <!-- history moved here from locker.jsx -->
+  <script type="text/babel">
+function HistoryScreen({ ctx }) {
+  const { state, setState, theme, history } = ctx;
+  const [filter, setFilter] = React.useState('all');
+
+  const FILTER_DEFS = [
+    { id: 'all',       label: '전체',    match: () => true },
+    { id: 'riding',    label: '사용 중',  match: h => h.status === 'riding' },
+    { id: 'done',      label: '탑승 완료', match: h => h.status === 'done' },
+    { id: 'cancelled', label: '호출 취소', match: h => h.status === 'cancelled' },
+  ];
+
+  const items = history.filter(FILTER_DEFS.find(f => f.id === filter).match);
+
+  const STATUS_STYLE = {
+    riding:    { bg: '#DCFCE7', fg: '#166534', dot: '#22C55E', label: '사용 중' },
+    done:      { bg: theme.sky,  fg: theme.deep,  dot: theme.core, label: '탑승 완료' },
+    cancelled: { bg: '#FEE2E2', fg: '#991B1B',  dot: '#EF4444', label: '호출 취소' },
+  };
+
+  const goToRide = (h) => {
+    setState({ ...state, mode: 'ride', step: 'enroute-arr',
+      departure: h.from, arrival: h.to, activeRobot: h.robot, routeProgress: 0.4 });
+  };
+
+  return (
+    <>
+      <div style={{ padding: '14px 16px 10px' }}>
+        <div style={{ fontSize: 24, fontWeight: 700, color: theme.deep, letterSpacing: '-0.02em' }}>이용 내역</div>
+        <div style={{ fontSize: 13, color: theme.muted, marginTop: 2 }}>지난 30일 간 기록</div>
+      </div>
+
+      {/* 필터 탭 */}
+      <div style={{ display: 'flex', gap: 6, padding: '0 16px 12px', overflowX: 'auto' }}>
+        {FILTER_DEFS.map(f => {
+          const active = filter === f.id;
+          const count = history.filter(f.match).length;
+          return (
+            <button key={f.id} onClick={() => setFilter(f.id)} style={{
+              border: 'none', borderRadius: 999, padding: '8px 14px', flexShrink: 0,
+              background: active ? theme.deep : theme.card,
+              color: active ? '#fff' : theme.deep,
+              boxShadow: !active ? `inset 0 0 0 1.2px ${theme.border}` : 'none',
+              fontSize: 13, fontWeight: 600, fontFamily: 'inherit', cursor: 'pointer',
+              letterSpacing: '-0.01em', display: 'inline-flex', alignItems: 'center', gap: 6,
+              transition: 'all 0.15s',
+            }}>
+              {f.label}
+              <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, opacity: 0.7 }}>{count}</span>
+            </button>
+          );
+        })}
+      </div>
+
+      {/* 내역 목록 */}
+      <div style={{ padding: '0 16px 16px' }}>
+        {items.length === 0 && (
+          <div style={{ textAlign: 'center', padding: '40px 0', color: theme.muted, fontSize: 13, fontWeight: 600 }}>
+            해당 내역이 없어요
+          </div>
+        )}
+        {items.map(h => {
+          const sc = STATUS_STYLE[h.status] || STATUS_STYLE.done;
+          const isRiding = h.status === 'riding';
+          return (
+            <div key={h.id}
+              onClick={isRiding ? () => goToRide(h) : undefined}
+              style={{
+                display: 'flex', flexDirection: 'column', padding: '14px', borderRadius: 14, marginBottom: 8,
+                background: isRiding ? theme.core : theme.card,
+                boxShadow: isRiding
+                  ? `0 4px 16px ${theme.core}44`
+                  : `inset 0 0 0 1.2px ${theme.border}`,
+                cursor: isRiding ? 'pointer' : 'default',
+                transition: 'transform 0.1s',
+              }}
+              onMouseDown={e => isRiding && (e.currentTarget.style.transform = 'scale(0.98)')}
+              onMouseUp={e => isRiding && (e.currentTarget.style.transform = 'scale(1)')}
+              onMouseLeave={e => isRiding && (e.currentTarget.style.transform = 'scale(1)')}
+            >
+              {/* 상단: 상태 뱃지 + 시간 */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
+                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 5,
+                  padding: '3px 9px', borderRadius: 999,
+                  background: isRiding ? 'rgba(255,255,255,0.2)' : sc.bg,
+                  color: isRiding ? '#fff' : sc.fg,
+                  fontSize: 11, fontWeight: 700 }}>
+                  <div style={{ width: 6, height: 6, borderRadius: '50%',
+                    background: isRiding ? '#fff' : sc.dot, flexShrink: 0 }}/>
+                  {sc.label}
+                  {isRiding && <span style={{ opacity: 0.8, marginLeft: 2 }}>· 탭하여 확인</span>}
+                </div>
+                <span style={{ fontSize: 11.5, color: isRiding ? 'rgba(255,255,255,0.7)' : theme.muted }}>{h.when}</span>
+              </div>
+
+              {/* 경로 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8,
+                fontFamily: "'JetBrains Mono', monospace", fontSize: 13.5, fontWeight: 700,
+                color: isRiding ? '#fff' : theme.deep }}>
+                <span>{h.from}</span>
+                <span style={{ opacity: isRiding ? 0.6 : 0.4, fontSize: 12 }}>→</span>
+                <span>{h.to}</span>
+              </div>
+
+              {/* 하단: 로봇 + 소요시간 */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 6 }}>
+                {h.robot && (
+                  <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10.5, fontWeight: 700,
+                    padding: '2px 7px', borderRadius: 5,
+                    background: isRiding ? 'rgba(255,255,255,0.18)' : theme.sky,
+                    color: isRiding ? '#fff' : theme.core }}>
+                    {h.robot}
+                  </span>
+                )}
+                {h.durationMin && (
+                  <span style={{ fontSize: 11.5, color: isRiding ? 'rgba(255,255,255,0.65)' : theme.muted }}>
+                    {h.durationMin}분 소요
+                  </span>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+Object.assign(window, { HistoryScreen });
+  </script>
+
+  <!-- ═══════════════════════════════════════════════════════════ app.jsx -->
+  <script type="text/babel">
+const { useState: useStateA, useEffect: useEffectA } = React;
+
+function PhoneShell({ children, theme, dark, scale = 1 }) {
+  const W = 392, H = 832;
+  return (
+    <div style={{ width: W * scale, height: H * scale, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ width: W, height: H, transform: `scale(${scale})`, transformOrigin: 'top left',
+        borderRadius: 44, overflow: 'hidden', background: theme.surface,
+        border: `9px solid ${dark ? '#1a1a1f' : '#171a22'}`,
+        boxShadow: '0 30px 80px rgba(0,47,108,0.28), 0 0 0 1px rgba(0,0,0,0.04)',
+        position: 'absolute', top: 0, left: 0, display: 'flex', flexDirection: 'column', boxSizing: 'border-box' }}>
+        <PhoneStatusBar theme={theme} dark={dark}/>
+        <div style={{ flex: 1, overflowY: 'auto', overflowX: 'hidden', background: theme.surface }}>
+          {children}
+        </div>
+        <PhoneNavBar theme={theme}/>
+      </div>
+    </div>
+  );
+}
+
+function PhoneStatusBar({ theme, dark }) {
+  const c = theme.deep;
+  return (
+    <div style={{ height: 38, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      padding: '0 22px', position: 'relative', flexShrink: 0, background: theme.surface }}>
+      <span style={{ fontSize: 14, fontWeight: 600, color: c, fontFamily: 'inherit', letterSpacing: '-0.01em' }}>9:30</span>
+      <div style={{ position: 'absolute', left: '50%', top: 6, transform: 'translateX(-50%)',
+        width: 22, height: 22, borderRadius: '50%', background: '#0a0d14' }}/>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <svg width="15" height="11" viewBox="0 0 15 11">
+          {[3,5,8,11].map((h,i) => <rect key={i} x={i*3.5} y={11-h} width="2.4" height={h} rx="0.5" fill={c}/>)}
+        </svg>
+        <svg width="14" height="11" viewBox="0 0 14 11">
+          <path d="M7 10.5 L 11 6.5 A 5.5 5.5 0 0 0 3 6.5 Z" fill={c} opacity="0.9"/>
+        </svg>
+        <svg width="22" height="11" viewBox="0 0 22 11">
+          <rect x="0" y="1" width="19" height="9" rx="1.6" fill="none" stroke={c} strokeWidth="0.9"/>
+          <rect x="2" y="2.5" width="13" height="6" rx="0.6" fill={c}/>
+          <rect x="20" y="3.5" width="1.6" height="4" rx="0.5" fill={c}/>
+        </svg>
+      </div>
+    </div>
+  );
+}
+
+function PhoneNavBar({ theme }) {
+  return (
+    <div style={{ height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+      <div style={{ width: 124, height: 4, borderRadius: 2, background: theme.deep, opacity: 0.6 }}/>
+    </div>
+  );
+}
+
+function BottomNav({ value, onChange, theme }) {
+  const tabs = [
+    { id: 'ride',     label: '탑승',           icon: (active) => <NavIconRide active={active} theme={theme}/> },
+    { id: 'live-map', label: '로봇 현황',     icon: (active) => <NavIconLiveMap active={active} theme={theme}/> },
+    { id: 'history',  label: '내역',           icon: (active) => <NavIconHistory active={active} theme={theme}/> },
+  ];
+  return (
+    <div style={{ position: 'sticky', bottom: 0, background: theme.card, borderTop: `1px solid ${theme.border}`,
+      display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', paddingBottom: 4, paddingTop: 4 }}>
+      {tabs.map(t => {
+        const active = value === t.id;
+        return (
+          <button key={t.id} onClick={() => onChange(t.id)} style={{
+            border: 'none', background: 'transparent', cursor: 'pointer', padding: '6px 4px',
+            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2,
+            fontFamily: 'inherit', color: active ? theme.core : theme.muted }}>
+            {t.icon(active)}
+            <span style={{ fontSize: 11, fontWeight: active ? 700 : 600, letterSpacing: '-0.01em', whiteSpace: 'nowrap' }}>{t.label}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function NavIconRide({ active, theme }) {
+  const c = active ? theme.core : theme.muted;
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <circle cx="11" cy="9" r="5.5" stroke={c} strokeWidth="1.6" fill={active ? theme.sky : 'none'}/>
+      <line x1="0" y1="-4.5" x2="0" y2="-3" stroke={c} strokeWidth="0.9" strokeLinecap="round" transform="translate(11,9)"/>
+      <circle cx="11" cy="4.5" r="0.9" fill={c}/>
+      <rect x="8.5" y="6" width="5" height="4.5" rx="1" fill="none" stroke={c} strokeWidth="0.9"/>
+      <circle cx="9.9" cy="8.1" r="0.65" fill={c}/>
+      <circle cx="12.1" cy="8.1" r="0.65" fill={c}/>
+      <line x1="8.5" y1="11.2" x2="13.5" y2="11.2" stroke={c} strokeWidth="0.8"/>
+      <path d="M5 19 Q11 15 17 19" stroke={c} strokeWidth="1.6" strokeLinecap="round" fill="none"/>
+    </svg>
+  );
+}
+
+function NavIconLiveMap({ active, theme }) {
+  const c = active ? theme.core : theme.muted;
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <rect x="2" y="5" width="18" height="13" rx="2" stroke={c} strokeWidth="1.6" fill={active ? theme.sky : 'none'}/>
+      <circle cx="7.5" cy="11.5" r="2" stroke={c} strokeWidth="1.3"/>
+      <circle cx="7.5" cy="11.5" r="0.6" fill={c}/>
+      <path d="M12 9.5h5M12 12h3.5M12 14.5h5" stroke={c} strokeWidth="1.3" strokeLinecap="round"/>
+      <circle cx="16" cy="5" r="3" fill={theme.bright}/>
+      <line x1="16" y1="3.5" x2="16" y2="6.5" stroke="#fff" strokeWidth="1.1" strokeLinecap="round"/>
+      <line x1="14.5" y1="5" x2="17.5" y2="5" stroke="#fff" strokeWidth="1.1" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function NavIconHistory({ active, theme }) {
+  const c = active ? theme.core : theme.muted;
+  return (
+    <svg width="22" height="22" viewBox="0 0 22 22" fill="none">
+      <circle cx="11" cy="11" r="7.5" stroke={c} strokeWidth="1.6" fill={active ? theme.sky : 'none'}/>
+      <path d="M11 6.5 V 11 L 14 13" stroke={c} strokeWidth="1.6" strokeLinecap="round"/>
+    </svg>
+  );
+}
+
+function AppHeader({ theme, location }) {
+  return (
+    <div style={{ padding: '4px 16px 0', background: theme.surface }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <div style={{ width: 26, height: 26, borderRadius: 8, background: theme.core, color: '#fff',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            fontFamily: "'JetBrains Mono', monospace", fontSize: 12, fontWeight: 700, letterSpacing: '-0.02em' }}>C</div>
+          <div>
+            <div style={{ fontSize: 14, fontWeight: 700, color: theme.deep, letterSpacing: '-0.02em', lineHeight: 1 }}>Connect: Ride</div>
+          </div>
+        </div>
+        <button style={{ width: 36, height: 36, borderRadius: 11, border: `1.2px solid ${theme.border}`,
+          background: theme.card, color: theme.deep, cursor: 'pointer',
+          display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M2 4h12M2 8h12M2 12h12" stroke={theme.deep} strokeWidth="1.6" strokeLinecap="round"/>
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+const TWEAK_DEFAULTS = { theme: 'cobalt', sketchIntensity: 0.6, mapDensity: 'normal', robotCount: 3, dark: false, deviceScale: 1 };
+
+function LiveMapScreen({ ctx }) {
+  const { state, setState, theme, nodes, robots } = ctx;
+  const idleCount = robots.filter(r => r.status === 'idle').length;
+  return (
+    <>
+      <div style={{ padding: '14px 16px 10px' }}>
+        <div style={{ fontSize: 22, fontWeight: 700, color: theme.deep, letterSpacing: '-0.02em' }}>실시간 로봇 현황</div>
+        <div style={{ fontSize: 13, color: theme.muted, marginTop: 2 }}>P3 · 7F · 현재 {robots.length}대 운영 중</div>
+      </div>
+
+      {/* 요약 뱃지 */}
+      <div style={{ display: 'flex', gap: 8, padding: '0 16px 12px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 999,
+          background: theme.sky, boxShadow: `inset 0 0 0 1.2px ${theme.core}33`, fontSize: 12, fontWeight: 700, color: theme.deep }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: theme.core }}/>
+          탑승 가능 {idleCount}대
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 12px', borderRadius: 999,
+          background: theme.bg, boxShadow: `inset 0 0 0 1.2px ${theme.border}`, fontSize: 12, fontWeight: 700, color: theme.muted }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: theme.muted }}/>
+          이용 중 {robots.length - idleCount}대
+        </div>
+      </div>
+
+      {/* 전체 맵 */}
+      <div style={{ margin: '0 16px', borderRadius: 16, background: theme.bg,
+        boxShadow: `inset 0 0 0 1.2px ${theme.border}`, overflow: 'hidden', position: 'relative' }}>
+        <div style={{ position: 'absolute', top: 10, left: 12, zIndex: 1,
+          background: theme.card, borderRadius: 8, padding: '4px 10px',
+          boxShadow: `inset 0 0 0 1px ${theme.border}`,
+          fontSize: 10, fontWeight: 700, color: theme.muted, fontFamily: "'JetBrains Mono', monospace",
+          display: 'flex', alignItems: 'center', gap: 5 }}>
+          <div style={{ width: 6, height: 6, borderRadius: '50%', background: theme.bright }}/>
+          LIVE
+        </div>
+        <div style={{ height: 340 }}>
+          <FabMap nodes={nodes} robots={robots} theme={theme} sketchIntensity={state.sketchIntensity}
+            mode="view" dark={state.dark}/>
+        </div>
+      </div>
+
+      {/* 로봇 목록 */}
+      <div style={{ padding: '14px 16px 16px' }}>
+        <div style={{ fontSize: 12, fontWeight: 700, color: theme.muted, letterSpacing: '0.05em', textTransform: 'uppercase', marginBottom: 10 }}>로봇 현황</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {robots.map(r => {
+            const isIdle = r.status === 'idle';
+            return (
+              <div key={r.id} style={{ display: 'flex', alignItems: 'center', gap: 12,
+                padding: '11px 14px', borderRadius: 12, background: theme.card,
+                boxShadow: `inset 0 0 0 1.2px ${isIdle ? theme.core + '44' : theme.border}` }}>
+                <div style={{ width: 38, height: 24, borderRadius: 6, flexShrink: 0,
+                  background: isIdle ? theme.core : theme.muted, color: '#fff',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  fontFamily: "'JetBrains Mono', monospace", fontSize: 10, fontWeight: 700 }}>{r.id}</div>
+                <div style={{ flex: 1, minWidth: 0 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                    <div style={{ width: 7, height: 7, borderRadius: '50%',
+                      background: isIdle ? '#22C55E' : '#F59E0B', flexShrink: 0 }}/>
+                    <span style={{ fontSize: 13, fontWeight: 700, color: theme.deep }}>
+                      {isIdle ? '탑승 가능' : '이용 중'}
+                    </span>
+                    <span style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: theme.muted }}>· {r.at}</span>
+                  </div>
+                </div>
+                <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11, color: theme.muted, textAlign: 'right', flexShrink: 0 }}>
+                  BAT {r.battery}%
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
+  );
+}
+
+function App() {
+  const [tweaks, setTweak] = useTweaks(TWEAK_DEFAULTS);
+  const theme = getTheme(tweaks.theme, tweaks.dark);
+  const nodes = getNodes(tweaks.mapDensity);
+  const robots = getRobots(tweaks.robotCount);
+
+  const [state, setState] = useStateA({
+    mode: 'ride', step: 'departure',
+    departure: null, arrival: null, activeRobot: null, routeProgress: 0,
+    filters: { rideable: false },
+    sketchIntensity: tweaks.sketchIntensity, dark: tweaks.dark,
+  });
+
+  useEffectA(() => {
+    setState(s => ({ ...s, sketchIntensity: tweaks.sketchIntensity, dark: tweaks.dark }));
+  }, [tweaks.sketchIntensity, tweaks.dark]);
+
+  const [history, setHistory] = useStateA(HISTORY);
+  const pushHistory = (entry) => setHistory(prev => [{ id: 'n' + Date.now(), ...entry }, ...prev]);
+  const currentLoc = 'BAY-02';
+  const ctx = { state, setState, theme, nodes, robots, history, pushHistory, currentLoc };
+
+  let Screen = null;
+  if (state.mode === 'ride') {
+    if (state.step === 'departure')   Screen = <DepartureScreen ctx={ctx}/>;
+    if (state.step === 'arrival')     Screen = <ArrivalScreen ctx={ctx}/>;
+    if (state.step === 'dispatching')   Screen = <DispatchingScreen ctx={ctx}/>;
+    if (state.step === 'enroute-dep')   Screen = <EnRouteDepScreen ctx={ctx}/>;
+    if (state.step === 'at-departure')  Screen = <AtDepartureScreen ctx={ctx}/>;
+    if (state.step === 'enroute-arr')   Screen = <EnRouteArrScreen ctx={ctx}/>;
+    if (state.step === 'at-arrival')    Screen = <AtArrivalScreen ctx={ctx}/>;
+  } else if (state.mode === 'live-map') {
+    Screen = <LiveMapScreen ctx={ctx}/>;
+  } else if (state.mode === 'history') {
+    Screen = <HistoryScreen ctx={ctx}/>;
+  }
+
+  return (
+    <>
+      <PhoneShell theme={theme} dark={tweaks.dark} scale={tweaks.deviceScale}>
+        <div style={{ minHeight: '100%', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ background: theme.surface, flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <AppHeader theme={theme} location={currentLoc}/>
+            <div style={{ flex: 1 }}>{Screen}</div>
+          </div>
+          <BottomNav
+            value={state.mode}
+            onChange={(v) => setState({
+              ...state, mode: v,
+              step: v === 'ride' ? 'departure' : state.step,
+            })}
+            theme={theme}/>
+        </div>
+      </PhoneShell>
+
+      <TweaksPanel title="Tweaks">
+        <TweakSection label="테마">
+          <TweakRadio label="컬러" value={tweaks.theme}
+            options={[{ value: 'cobalt', label: 'Cobalt' }, { value: 'forest', label: 'Forest' }, { value: 'ember', label: 'Ember' }, { value: 'graphite', label: 'Graphite' }]}
+            onChange={(v) => setTweak('theme', v)}/>
+          <TweakToggle label="다크 모드" value={tweaks.dark} onChange={(v) => setTweak('dark', v)}/>
+        </TweakSection>
+        <TweakSection label="맵">
+          <TweakSlider label="스케치 강도" value={tweaks.sketchIntensity} min={0} max={1.2} step={0.1}
+            onChange={(v) => setTweak('sketchIntensity', v)}/>
+          <TweakRadio label="정류장 밀도" value={tweaks.mapDensity}
+            options={[{ value: 'sparse', label: '적게' }, { value: 'normal', label: '보통' }, { value: 'dense', label: '많게' }]}
+            onChange={(v) => setTweak('mapDensity', v)}/>
+          <TweakSlider label="로봇 대수" value={tweaks.robotCount} min={2} max={6} step={1}
+            onChange={(v) => setTweak('robotCount', v)}/>
+        </TweakSection>
+        <TweakSection label="디바이스">
+          <TweakSlider label="프레임 크기" value={tweaks.deviceScale} min={0.6} max={1.2} step={0.05}
+            onChange={(v) => setTweak('deviceScale', v)}/>
+        </TweakSection>
+      </TweaksPanel>
+    </>
+  );
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+  </script>
+</body>
+</html>
