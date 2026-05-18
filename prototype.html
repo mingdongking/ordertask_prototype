@@ -227,7 +227,20 @@ const actionTypes = [
   { id:"GRIP",   label:"그립",   icon:"Hand",            color:"#9333ea", defaultDuration:2,  fleets:["arm"] },
   { id:"DOCK",   label:"도킹",   icon:"Anchor",          color:"#0d9488", defaultDuration:4,  fleets:["amr","agv"] },
 ];
-const mapNodes = [
+const mapEdges = [
+  {id:"E-01", from:"MN-1", to:"MN-2",  dir:"bi"},
+  {id:"E-02", from:"MN-2", to:"MN-3",  dir:"bi"},
+  {id:"E-03", from:"MN-3", to:"MN-4",  dir:"bi"},
+  {id:"E-04", from:"MN-4", to:"MN-5",  dir:"one"},
+  {id:"E-05", from:"MN-5", to:"MN-6",  dir:"bi"},
+  {id:"E-06", from:"MN-5", to:"MN-7",  dir:"bi"},
+  {id:"E-07", from:"MN-6", to:"MN-8",  dir:"bi"},
+  {id:"E-08", from:"MN-7", to:"MN-8",  dir:"one"},
+  {id:"E-09", from:"MN-1", to:"MN-9",  dir:"bi"},
+  {id:"E-10", from:"MN-9", to:"MN-10", dir:"bi"},
+  {id:"E-11", from:"MN-4", to:"MN-11", dir:"bi"},
+  {id:"E-12", from:"MN-11",to:"MN-12", dir:"bi"},
+];
   { id:"MN-1",  label:"A동 입고대",   x:110, y:110, fleets:["amr","agv"] },
   { id:"MN-2",  label:"A동 적재 #1", x:220, y:110, fleets:["amr","agv"] },
   { id:"MN-3",  label:"A동 적재 #2", x:320, y:160, fleets:["amr","agv"] },
@@ -834,28 +847,59 @@ function MonitoringHome({ onNavigate }) {
                 <div className="space-y-2">
                   {editZones.map(z=>{
                     const isSel=selectedZoneId===z.id;
+                    // 이 Zone 안에 속한 노드/엣지
+                    const zNodes = mapNodes.filter(n=> n.x>=z.x && n.x<=z.x+z.w && n.y>=z.y && n.y<=z.y+z.h);
+                    const zEdges = mapEdges.filter(e=>{
+                      const fn=mapNodes.find(n=>n.id===e.from), tn=mapNodes.find(n=>n.id===e.to);
+                      return fn&&tn&&((fn.x>=z.x&&fn.x<=z.x+z.w&&fn.y>=z.y&&fn.y<=z.y+z.h)||(tn.x>=z.x&&tn.x<=z.x+z.w&&tn.y>=z.y&&tn.y<=z.y+z.h));
+                    });
                     return(
-                      <div key={z.id} onClick={()=>setSelectedZoneId(z.id)}
-                        className={"rounded-lg border p-2.5 cursor-pointer transition "+(isSel?"border-blue-400 bg-blue-50/60 shadow-sm":"border-slate-200 bg-slate-50/50 hover:border-slate-300")}>
-                        {editingZoneId===z.id?(
-                          <div className="space-y-2" onClick={e=>e.stopPropagation()}>
-                            <input autoFocus value={newZoneName} onChange={e=>setNewZoneName(e.target.value)}
-                              className="w-full h-8 px-2 rounded-md border border-blue-400 text-[12.5px] text-slate-900 outline-none ring-2 ring-blue-100"/>
-                            <div className="flex gap-1.5">
-                              <button onClick={()=>{setEditZones(p=>p.map(x=>x.id===z.id?{...x,name:newZoneName}:x));setEditingZoneId(null);}}
-                                className="flex-1 h-7 rounded bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-medium">저장</button>
-                              <button onClick={()=>setEditingZoneId(null)} className="h-7 px-2 rounded border border-slate-200 bg-white text-[11.5px] text-slate-600">취소</button>
+                      <div key={z.id}>
+                        <div onClick={()=>setSelectedZoneId(isSel?null:z.id)}
+                          className={"rounded-lg border p-2.5 cursor-pointer transition "+(isSel?"border-blue-400 bg-blue-50/60 shadow-sm":"border-slate-200 bg-slate-50/50 hover:border-slate-300")}>
+                          {editingZoneId===z.id?(
+                            <div className="space-y-2" onClick={e=>e.stopPropagation()}>
+                              <input autoFocus value={newZoneName} onChange={e=>setNewZoneName(e.target.value)}
+                                className="w-full h-8 px-2 rounded-md border border-blue-400 text-[12.5px] text-slate-900 outline-none ring-2 ring-blue-100"/>
+                              <div className="flex gap-1.5">
+                                <button onClick={()=>{setEditZones(p=>p.map(x=>x.id===z.id?{...x,name:newZoneName}:x));setEditingZoneId(null);}}
+                                  className="flex-1 h-7 rounded bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-medium">저장</button>
+                                <button onClick={()=>setEditingZoneId(null)} className="h-7 px-2 rounded border border-slate-200 bg-white text-[11.5px] text-slate-600">취소</button>
+                              </div>
                             </div>
-                          </div>
-                        ):(
-                          <div className="flex items-center gap-2">
-                            <div className="w-2.5 h-8 rounded-sm shrink-0" style={{background:z.color,opacity:0.75}}/>
-                            <div className="flex-1 min-w-0">
-                              <div className={"text-[12.5px] font-semibold truncate "+(isSel?"text-blue-700":"text-slate-900")}>{z.name}</div>
-                              <div className="text-[10.5px] text-slate-400 tnum">{z.id}</div>
+                          ):(
+                            <div className="flex items-center gap-2">
+                              <div className="w-2.5 h-8 rounded-sm shrink-0" style={{background:z.color,opacity:0.75}}/>
+                              <div className="flex-1 min-w-0">
+                                <div className={"text-[12.5px] font-semibold truncate "+(isSel?"text-blue-700":"text-slate-900")}>{z.name}</div>
+                                <div className="text-[10.5px] text-slate-400 tnum">{z.id}</div>
+                              </div>
+                              <Icon name={isSel?"ChevronDown":"ChevronRight"} size={12} className="text-slate-400 shrink-0"/>
+                              <button onClick={e=>{e.stopPropagation();setEditingZoneId(z.id);setNewZoneName(z.name);}} className="w-6 h-6 grid place-items-center rounded hover:bg-slate-200 text-slate-400 hover:text-blue-600"><Icon name="Pencil" size={11}/></button>
+                              <button onClick={e=>{e.stopPropagation();setEditZones(p=>p.filter(x=>x.id!==z.id));if(selectedZoneId===z.id)setSelectedZoneId(null);}} className="w-6 h-6 grid place-items-center rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500"><Icon name="Trash2" size={11}/></button>
                             </div>
-                            <button onClick={e=>{e.stopPropagation();setEditingZoneId(z.id);setNewZoneName(z.name);}} className="w-6 h-6 grid place-items-center rounded hover:bg-slate-200 text-slate-400 hover:text-blue-600"><Icon name="Pencil" size={11}/></button>
-                            <button onClick={e=>{e.stopPropagation();setEditZones(p=>p.filter(x=>x.id!==z.id));if(selectedZoneId===z.id)setSelectedZoneId(null);}} className="w-6 h-6 grid place-items-center rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500"><Icon name="Trash2" size={11}/></button>
+                          )}
+                        </div>
+                        {/* 선택된 Zone의 하위 노드/엣지 */}
+                        {isSel&&!editingZoneId&&(
+                          <div className="ml-3 mt-1 mb-2 space-y-1 border-l-2 pl-2" style={{borderColor:z.color+"60"}}>
+                            {zNodes.length===0&&zEdges.length===0&&(
+                              <div className="text-[11px] text-slate-400 py-1 italic">이 Zone에 포함된 요소가 없습니다.</div>
+                            )}
+                            {zNodes.map(n=>(
+                              <div key={n.id} className="flex items-center gap-1.5 px-2 py-1 rounded bg-white border border-slate-200 text-[11px]">
+                                <Icon name="MapPin" size={10} className="text-blue-500 shrink-0"/>
+                                <span className="font-medium text-slate-800 truncate">{n.label}</span>
+                                <span className="text-slate-400 tnum ml-auto">{n.id}</span>
+                              </div>
+                            ))}
+                            {zEdges.map(e=>(
+                              <div key={e.id} className="flex items-center gap-1.5 px-2 py-1 rounded bg-white border border-slate-200 text-[11px]">
+                                <Icon name={e.dir==="bi"?"ArrowLeftRight":"ArrowRight"} size={10} className="text-purple-500 shrink-0"/>
+                                <span className="font-medium text-slate-800 truncate">{e.from}→{e.to}</span>
+                                <span className="text-slate-400 tnum ml-auto">{e.id}</span>
+                              </div>
+                            ))}
                           </div>
                         )}
                       </div>
@@ -876,15 +920,6 @@ function MonitoringHome({ onNavigate }) {
                 </div>
               </div>
             )}
-            <div className="p-3 border-t border-slate-200 shrink-0">
-              <button onClick={exitEdit} className="w-full h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5">
-                <Icon name="Check" size={14}/> 편집 완료
-              </button>
-            </div>
-          </div>
-        )}
-
-        {/* 맵 콘텐츠 (항상 렌더링, 편집 모드엔 flex-1) */}
         <div className={mapFullscreen&&editMode ? "flex-1 min-w-0 flex flex-col overflow-hidden" : "flex flex-col"}>
           <div className="h-11 px-4 border-b border-slate-200 flex items-center gap-2">
             <Icon name="Map" size={14} className="text-slate-500"/>
@@ -912,10 +947,21 @@ function MonitoringHome({ onNavigate }) {
             </div>
             <span className="ml-1 text-[11px] text-slate-500">{visible.length}/{mapRobots.length} 표시</span>
             <div className="ml-auto flex items-center gap-1">
-              <button onClick={()=>{ setMapFullscreen(true); setEditMode(true); }}
-                className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1">
-                <Icon name="Pencil" size={11}/> 편집
-              </button>
+              {editMode ? (<>
+                <button onClick={exitEdit}
+                  className="h-7 px-2.5 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200">
+                  <Icon name="X" size={11}/> 취소
+                </button>
+                <button onClick={exitEdit}
+                  className="h-7 px-2.5 rounded text-[11.5px] text-white bg-blue-600 hover:bg-blue-700 flex items-center gap-1">
+                  <Icon name="Save" size={11}/> 저장
+                </button>
+              </>) : (
+                <button onClick={()=>{ setMapFullscreen(true); setEditMode(true); }}
+                  className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1">
+                  <Icon name="Pencil" size={11}/> 편집
+                </button>
+              )}
               <div className="w-px h-4 bg-slate-200 mx-0.5"/>
               <div className="relative">
                 <button onClick={()=>setLayerOpen(o=>!o)}
@@ -1113,7 +1159,6 @@ function MonitoringHome({ onNavigate }) {
               </svg>
             )}
           </div>
-        </div>
         </div>
       </div>
 
