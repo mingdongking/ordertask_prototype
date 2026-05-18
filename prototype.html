@@ -984,7 +984,12 @@ function MonitoringHome({ onNavigate }) {
             </div>
           </div>
           {/* Map canvas */}
-          <div className={"relative dot-bg "+(mapFullscreen?"flex-1":"") } style={mapFullscreen?{}:{height:460}}>
+          <div ref={mapCanvasRef}
+            className={"relative dot-bg "+(mapFullscreen?"flex-1":"") }
+            style={mapFullscreen?{}:{height:460}}
+            onMouseMove={handleMapMouseMove}
+            onMouseUp={handleMapMouseUp}
+            onMouseLeave={handleMapMouseUp}>
             {/* Zone areas */}
             {/* Zone areas */}
             {layers.has("zone")&&<>
@@ -1077,6 +1082,36 @@ function MonitoringHome({ onNavigate }) {
                 </div>
               );
             })}
+
+            {/* Edit Mode: Zone 오버레이 (드래그 가능) */}
+            {editMode&&(
+              <svg className="absolute inset-0 w-full h-full" style={{pointerEvents:"none", overflow:"visible"}}>
+                {editZones.map(z=>{
+                  const isSel = selectedZoneId===z.id;
+                  return(
+                    <g key={z.id} style={{pointerEvents:"all", cursor: dragState?.zoneId===z.id?"grabbing":"grab"}}
+                      onMouseDown={e=>handleZoneMouseDown(e,z.id)}
+                      onClick={e=>{e.stopPropagation(); setSelectedZoneId(z.id);}}>
+                      <rect x={z.x} y={z.y} width={z.w} height={z.h} rx={6}
+                        fill={z.color} fillOpacity={isSel?0.22:0.12}
+                        stroke={z.color} strokeWidth={isSel?2.5:1.5}
+                        strokeDasharray={isSel?"none":"6 3"}/>
+                      {isSel&&(
+                        <>
+                          <rect x={z.x-3} y={z.y-3} width={z.w+6} height={z.h+6} rx={8}
+                            fill="none" stroke={z.color} strokeWidth={1} opacity={0.35} strokeDasharray="3 3"/>
+                          {[[z.x,z.y],[z.x+z.w,z.y],[z.x,z.y+z.h],[z.x+z.w,z.y+z.h]].map(([cx,cy],i)=>(
+                            <rect key={i} x={cx-4} y={cy-4} width={8} height={8} rx={2} fill="white" stroke={z.color} strokeWidth={1.5}/>
+                          ))}
+                        </>
+                      )}
+                      <text x={z.x+8} y={z.y+18} fill={z.color} fontSize={10} fontWeight="700" style={{pointerEvents:"none", userSelect:"none"}}>{z.name}</text>
+                      <text x={z.x+8} y={z.y+30} fill={z.color} fontSize={8} opacity={0.7} style={{pointerEvents:"none", userSelect:"none"}}>{z.id}</text>
+                    </g>
+                  );
+                })}
+              </svg>
+            )}
           </div>
         </div>
         </div>
