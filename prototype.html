@@ -677,6 +677,18 @@ function MonitoringHome({ onNavigate }) {
   const [layerOpen, setLayerOpen] = useState(false);
   const [layers, setLayers] = useState(new Set(["robot","node","edge","zone"]));
   const [mapFullscreen, setMapFullscreen] = useState(false);
+  const [editMode, setEditMode] = useState(false);
+  const [editTab, setEditTab] = useState("zone");
+  const [editZones, setEditZones] = useState([
+    {id:"EZ-01", name:"Zone A · 입고",  type:"zone-a", color:"#2563eb"},
+    {id:"EZ-02", name:"Zone B · 하역",  type:"zone-b", color:"#10b981"},
+    {id:"EZ-03", name:"Zone C · 충전",  type:"zone-c", color:"#64748b"},
+    {id:"EZ-04", name:"Zone D · 조립",  type:"zone-d", color:"#7c3aed"},
+  ]);
+  const [editingZoneId, setEditingZoneId] = useState(null);
+  const [newZoneName, setNewZoneName] = useState("");
+
+  function exitEdit(){ setMapFullscreen(false); setEditMode(false); }
   function toggleLayer(id){ setLayers(prev=>{ const n=new Set(prev); n.has(id)?n.delete(id):n.add(id); return n; }); }
   const mapRobots = [
     {id:"Tool001",x:280,y:130,fleet:"amr",st:"run",    battery:82,task:"PICK-2041", recipe:"A동→B동 자재이송",  progress:64},
@@ -691,7 +703,7 @@ function MonitoringHome({ onNavigate }) {
     {id:"x002",x:780,y:360,fleet:"semi",st:"idle", battery:92,task:null,        recipe:null,                progress:0},
   ];
   useEffect(()=>{
-    const fn=e=>{if(e.key==="Escape"&&mapFullscreen) setMapFullscreen(false);};
+    const fn=e=>{if(e.key==="Escape"&&mapFullscreen){ setMapFullscreen(false); setEditMode(false); }};
     window.addEventListener("keydown",fn);
     return()=>window.removeEventListener("keydown",fn);
   },[mapFullscreen]);
@@ -769,10 +781,81 @@ function MonitoringHome({ onNavigate }) {
         </div>
       </div>
       {/* Map full width */}
-      {mapFullscreen&&<div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>setMapFullscreen(false)}/>}
+      {mapFullscreen&&<div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>{setMapFullscreen(false);setEditMode(false);}}/>}
       <div className={mapFullscreen
         ? "fixed inset-4 z-50 rounded-xl shadow-2xl overflow-hidden flex flex-col bg-white"
         : "bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"}>
+
+          {/* 편집 모드 좌측 패널 */}
+          {mapFullscreen&&editMode&&(
+            <div className="absolute left-0 top-0 bottom-0 z-40 w-60 bg-white border-r border-slate-200 shadow-lg flex flex-col" onClick={e=>e.stopPropagation()}>
+              <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2 shrink-0">
+                <div className="w-6 h-6 rounded bg-blue-50 grid place-items-center"><Icon name="Pencil" size={13} className="text-blue-600"/></div>
+                <span className="text-[13px] font-semibold text-slate-900">맵 편집</span>
+                <button onClick={exitEdit} className="ml-auto w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-400"><Icon name="X" size={13}/></button>
+              </div>
+              <div className="flex border-b border-slate-200 px-2 pt-2 gap-1 shrink-0">
+                {[{id:"zone",label:"Zone",icon:"LayoutGrid"},{id:"node",label:"노드",icon:"MapPin"},{id:"edge",label:"엣지",icon:"GitBranch"}].map(t=>(
+                  <button key={t.id} onClick={()=>setEditTab(t.id)}
+                    className={"h-8 px-3 rounded-t text-[12px] font-medium flex items-center gap-1.5 border-b-2 transition "+(editTab===t.id?"border-blue-500 text-blue-700 bg-blue-50/50":"border-transparent text-slate-600 hover:text-slate-900")}>
+                    <Icon name={t.icon} size={12}/>{t.label}
+                  </button>
+                ))}
+              </div>
+              {editTab==="zone"&&(
+                <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                  <button onClick={()=>{const id="EZ-"+(editZones.length+1).toString().padStart(2,"0");setEditZones(p=>[...p,{id,name:"새 Zone",type:"zone-new",color:"#94a3b8"}]);setEditingZoneId(id);setNewZoneName("새 Zone");}}
+                    className="w-full h-9 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-50 text-[12.5px] font-medium text-blue-600 flex items-center justify-center gap-1.5 transition">
+                    <Icon name="Plus" size={13}/> Zone 추가
+                  </button>
+                  <div className="space-y-2">
+                    {editZones.map(z=>(
+                      <div key={z.id} className="rounded-lg border border-slate-200 bg-slate-50/50 p-2.5">
+                        {editingZoneId===z.id ? (
+                          <div className="space-y-2">
+                            <input autoFocus value={newZoneName} onChange={e=>setNewZoneName(e.target.value)}
+                              className="w-full h-8 px-2 rounded-md border border-blue-400 text-[12.5px] text-slate-900 outline-none ring-2 ring-blue-100"/>
+                            <div className="flex gap-1.5">
+                              <button onClick={()=>{setEditZones(p=>p.map(x=>x.id===z.id?{...x,name:newZoneName}:x));setEditingZoneId(null);}}
+                                className="flex-1 h-7 rounded bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-medium">저장</button>
+                              <button onClick={()=>setEditingZoneId(null)} className="h-7 px-2 rounded border border-slate-200 bg-white hover:bg-slate-50 text-[11.5px] text-slate-600">취소</button>
+                            </div>
+                          </div>
+                        ):(
+                          <div className="flex items-center gap-2">
+                            <div className="w-2.5 h-8 rounded-sm shrink-0" style={{background:z.color,opacity:0.7}}/>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-[12.5px] font-semibold text-slate-900 truncate">{z.name}</div>
+                              <div className="text-[10.5px] text-slate-400 tnum">{z.id}</div>
+                            </div>
+                            <button onClick={()=>{setEditingZoneId(z.id);setNewZoneName(z.name);}} className="w-6 h-6 grid place-items-center rounded hover:bg-slate-200 text-slate-400 hover:text-blue-600"><Icon name="Pencil" size={11}/></button>
+                            <button onClick={()=>setEditZones(p=>p.filter(x=>x.id!==z.id))} className="w-6 h-6 grid place-items-center rounded hover:bg-rose-50 text-slate-400 hover:text-rose-500"><Icon name="Trash2" size={11}/></button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                    {editZones.length===0&&<div className="py-6 text-center text-[12px] text-slate-400">Zone이 없습니다.</div>}
+                  </div>
+                </div>
+              )}
+              {(editTab==="node"||editTab==="edge")&&(
+                <div className="flex-1 flex items-center justify-center">
+                  <div className="text-center">
+                    <div className="w-12 h-12 mx-auto rounded-xl bg-slate-50 border border-slate-200 grid place-items-center mb-3">
+                      <Icon name={editTab==="node"?"MapPin":"GitBranch"} size={20} className="text-slate-300"/>
+                    </div>
+                    <div className="text-[13px] font-semibold text-slate-500">{editTab==="node"?"노드":"엣지"} 편집</div>
+                    <div className="text-[11.5px] text-slate-400 mt-1">추후 추가 예정</div>
+                  </div>
+                </div>
+              )}
+              <div className="p-3 border-t border-slate-200 shrink-0">
+                <button onClick={exitEdit} className="w-full h-9 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[12.5px] font-semibold flex items-center justify-center gap-1.5">
+                  <Icon name="Check" size={14}/> 편집 완료
+                </button>
+              </div>
+            </div>
+          )}
           <div className="h-11 px-4 border-b border-slate-200 flex items-center gap-2">
             <Icon name="Map" size={14} className="text-slate-500"/>
             <div className="relative">
@@ -799,7 +882,7 @@ function MonitoringHome({ onNavigate }) {
             </div>
             <span className="ml-1 text-[11px] text-slate-500">{visible.length}/{mapRobots.length} 표시</span>
             <div className="ml-auto flex items-center gap-1">
-              <button onClick={()=>onNavigate("map-editor")}
+              <button onClick={()=>{ setMapFullscreen(true); setEditMode(true); }}
                 className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1">
                 <Icon name="Pencil" size={11}/> 편집
               </button>
