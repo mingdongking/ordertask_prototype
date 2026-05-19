@@ -3875,16 +3875,21 @@ const SC = {
   pending:{bg:"bg-purple-50",border:"border-purple-400",fg:"text-purple-900",label:"Pending",chip:"#7c3aed"},
 };
 
+function getOrderDur(o){
+  if(o.duration) return o.duration;
+  const r = recipes.find(r=>r.id===o.recipeId);
+  return r ? recipeDuration(r) : 30;
+}
+
 function computePlacement(allOrders, robotId, desiredStart, duration, ignoreId) {
   const row = allOrders.filter(o=>o.robotId===robotId&&o.id!==ignoreId);
   let start=desiredStart, safety=0, conflict=false;
   while(safety++<100){
     const end=start+duration;
-    const blocker=row.find(o=>{const dur=recipeDuration(recipes.find(r=>r.id===o.recipeId));const os=o.start-GANTT.BUFFER,oe=o.start+dur+GANTT.BUFFER;return start<oe&&end>os;});
+    const blocker=row.find(o=>{const dur=getOrderDur(o);const os=o.start-GANTT.BUFFER,oe=o.start+dur+GANTT.BUFFER;return start<oe&&end>os;});
     if(!blocker)break;
     conflict=true;
-    const dur=recipeDuration(recipes.find(r=>r.id===blocker.recipeId));
-    start=blocker.start+dur+GANTT.BUFFER;
+    start=blocker.start+getOrderDur(blocker)+GANTT.BUFFER;
   }
   return {start,conflict};
 }
@@ -4533,22 +4538,30 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted }) {
                 })}
                 <div className="absolute top-0 bottom-0 z-20 pointer-events-none" style={{left:(now-GANTT.startHour*60)*GANTT.pxPerMin}}><div className="w-px h-full bg-rose-500"/></div>
                 {orders.map(o=>{
-                  const r=recipes.find(rr=>rr.id===o.recipeId);if(!r)return null;
-                  const dur=recipeDuration(r),rowIdx=visR.findIndex(rb=>rb.id===o.robotId);if(rowIdx<0)return null;
+                  const r=recipes.find(rr=>rr.id===o.recipeId);
+                  if(!r && !o.duration) return null; // recipeId도 duration도 없으면 스킵
+                  const dur = getOrderDur(o);
+                  const rowIdx=visR.findIndex(rb=>rb.id===o.robotId);if(rowIdx<0)return null;
                   const isMoving=moving?.orderId===o.id;
-                  // running 블록은 예상 종료보다 현재시간이 지났으면 now까지 늘림
                   const visualEnd = o.status==="running" ? Math.max(o.start+dur, now) : o.start+dur;
                   const left=(o.start-GANTT.startHour*60)*GANTT.pxPerMin,width=(visualEnd-o.start)*GANTT.pxPerMin,top=rowIdx*GANTT.rowH+6,height=GANTT.rowH-12;
-                  const s=SC[o.status],isSel=selOrder?.id===o.id,isHL=hlRcp&&o.recipeId===hlRcp,editable=isEditable(o);
+                  const sc = SC[o.status]||SC["queued"];
+                  const s=sc, isSel=selOrder?.id===o.id, isHL=hlRcp&&o.recipeId===hlRcp, editable=isEditable(o);
+                  const barLabel = r?.name || o.label || o.id;
+                  const barColor = o.fleetColor || sc.chip;
                   return (
                     <button key={o.id} onMouseDown={e=>onBlockMouseDown(e,o)}
                       onClick={e=>{if(Date.now()-lastDragRef.current<200){e.preventDefault();return;}setSelOrder({...o,recipe:r});}}
                       className={"absolute rounded-md border text-left px-2 py-1.5 transition shadow-sm overflow-hidden "+s.bg+" "+s.border+" "+s.fg+(isSel?" ring-2 ring-blue-500 ring-offset-1 z-10":" hover:shadow-md hover:z-10")+(isHL?" ring-2 ring-amber-400":"")+(isMoving?" opacity-30":"")+(editable?" cursor-grab active:cursor-grabbing":" cursor-pointer")}
                       style={{left,top,width,height}}>
-                      <div className="flex items-center gap-1.5 mb-0.5"><span className="w-1 h-3 rounded-sm shrink-0" style={{background:s.chip}}/><span className="text-[11px] font-semibold truncate flex-1">{r.name}</span>{!editable&&o.status==="queued"&&<Icon name="Lock" size={9} className="opacity-60 shrink-0"/>}</div>
+                      <div className="flex items-center gap-1.5 mb-0.5">
+                        <span className="w-1 h-3 rounded-sm shrink-0" style={{background:barColor}}/>
+                        <span className="text-[11px] font-semibold truncate flex-1">{barLabel}</span>
+                        {o.status==="pending"&&<span className="text-[9px] font-bold px-1 rounded" style={{background:"#7c3aed22",color:"#7c3aed"}}>Pending</span>}
+                        {!editable&&o.status==="queued"&&<Icon name="Lock" size={9} className="opacity-60 shrink-0"/>}
+                      </div>
                       <div className="text-[10px] tnum opacity-80 flex items-center gap-1">
                         {fmtTime(o.start)}—{fmtTime(o.start+dur)}
-                        <span className="opacity-50">·</span>{dur}초
                         {o.status==="running"&&visualEnd>o.start+dur&&(
                           <span className="text-[9.5px] font-semibold text-blue-800 bg-blue-200 px-1 rounded ml-0.5">+{fmtTime(visualEnd-o.start-dur)} 초과</span>
                         )}
