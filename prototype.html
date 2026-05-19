@@ -4445,8 +4445,8 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
   const [libOpen,setLibOpen]=useState(true);
   const [libTab,setLibTab]=useState("library");
   const [filterTemplate,setFilterTemplate]=useState(null);
-  const [reqFleetF,setReqFleetF]=useState("all");
-  const [reqTplF,setReqTplF]=useState("all");
+  const [reqFleetF,setReqFleetF]=useState(new Set());
+  const [reqTplF,setReqTplF]=useState(new Set());
   const [now,setNow]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});
   const [hlRcp,setHlRcp]=useState(initialFocusRecipeId||null);
   const [addOpen,setAddOpen]=useState(false);
@@ -4488,7 +4488,7 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
     if(onMounted) onMounted();
   },[pendingOrder]);
 
-  useEffect(()=>{if(filterTemplate) setReqTplF(filterTemplate);},[filterTemplate]);
+  useEffect(()=>{if(filterTemplate) setReqTplF(new Set([filterTemplate])); else setReqTplF(new Set());},[filterTemplate]);
 
   const allR=robots;
   const visR=fleetF.size===0?allR:allR.filter(r=>fleetF.has(r.fleet));
@@ -4813,36 +4813,74 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
             {libTab==="requests"&&(()=>{
               const pendingOrders = orders.filter(o=>{
                 if(o.status!=="pending") return false;
-                if(reqFleetF!=="all" && o.fleet!==reqFleetF) return false;
-                if(reqTplF!=="all"   && o.fleet!==reqTplF) return false;
+                if(reqFleetF.size>0 && !reqFleetF.has(o.fleet)) return false;
+                if(reqTplF.size>0   && !reqTplF.has(o.fleet)) return false;
                 return true;
               });
               const lockedTemplates = recipes.filter(r=>r.locked);
+              const isDirty = reqFleetF.size>0 || reqTplF.size>0;
+
+              // 체크박스 콤보박스 컴포넌트
+              const CheckCombo = ({icon, placeholder, opts, val, onChange})=>{
+                const [open,setOpen] = React.useState(false);
+                const label = val.size===0 ? placeholder
+                  : val.size===1 ? (opts.find(o=>o.id===[...val][0])?.label||[...val][0])
+                  : `${val.size}개 선택`;
+                const toggle = id=>{ const n=new Set(val); n.has(id)?n.delete(id):n.add(id); onChange(n); };
+                return (
+                  <div className="relative">
+                    <button onClick={()=>setOpen(o=>!o)}
+                      className={"w-full h-7 pl-6 pr-6 rounded-md border text-[11.5px] text-left flex items-center transition "+(open?"border-blue-400 ring-1 ring-blue-200 bg-white":"border-slate-200 bg-white hover:border-slate-300")+(val.size>0?" text-blue-700 font-semibold":" text-slate-600")}>
+                      <Icon name={icon} size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                      <span className="truncate flex-1">{label}</span>
+                      {val.size>0 && <span className="shrink-0 w-4 h-4 rounded-full bg-blue-600 text-white text-[9px] font-bold grid place-items-center mr-1">{val.size}</span>}
+                      <Icon name="ChevronDown" size={10} className={"absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 transition-transform "+(open?"rotate-180":"")}/>
+                    </button>
+                    {open&&<>
+                      <div className="fixed inset-0 z-10" onClick={()=>setOpen(false)}/>
+                      <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-lg shadow-xl border border-slate-200 py-1 overflow-hidden">
+                        <button onClick={()=>onChange(new Set())}
+                          className={"w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-slate-50 "+(val.size===0?"bg-blue-50":"")}>
+                          <div className={"w-3.5 h-3.5 rounded border-2 grid place-items-center shrink-0 "+(val.size===0?"border-blue-500 bg-blue-500":"border-slate-300")}>
+                            {val.size===0&&<Icon name="Check" size={9} className="text-white"/>}
+                          </div>
+                          <span className={"text-[11.5px] "+(val.size===0?"text-blue-700 font-semibold":"text-slate-700")}>전체</span>
+                        </button>
+                        <div className="h-px bg-slate-100 my-0.5"/>
+                        {opts.map(o=>{
+                          const on=val.has(o.id);
+                          return(
+                            <button key={o.id} onClick={()=>toggle(o.id)}
+                              className={"w-full flex items-center gap-2 px-2.5 py-1.5 text-left hover:bg-slate-50 "+(on?"bg-blue-50/60":"")}>
+                              <div className={"w-3.5 h-3.5 rounded border-2 grid place-items-center shrink-0 transition "+(on?"border-blue-500 bg-blue-500":"border-slate-300")}>
+                                {on&&<Icon name="Check" size={9} className="text-white"/>}
+                              </div>
+                              <span className={"text-[11.5px] flex-1 truncate "+(on?"text-blue-700 font-medium":"text-slate-700")}>{o.label}</span>
+                              {o.color&&<span className="w-2 h-2 rounded-full shrink-0" style={{background:o.color}}/>}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </>}
+                  </div>
+                );
+              };
+
               return (<>
                 {/* 필터 */}
                 <div className="px-3 py-2 border-b border-slate-200 space-y-1.5">
-                  <div className="relative">
-                    <Icon name="Layers" size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                    <select value={reqFleetF} onChange={e=>setReqFleetF(e.target.value)}
-                      className="w-full h-7 pl-6 pr-6 rounded-md border border-slate-200 bg-white text-[11.5px] text-slate-800 outline-none focus:border-blue-400 appearance-none">
-                      <option value="all">전체 Fleet</option>
-                      {fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
-                    </select>
-                    <Icon name="ChevronDown" size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                  </div>
-                  <div className="relative">
-                    <Icon name="FileText" size={11} className="absolute left-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                    <select value={reqTplF} onChange={e=>setReqTplF(e.target.value)}
-                      className="w-full h-7 pl-6 pr-6 rounded-md border border-slate-200 bg-white text-[11.5px] text-slate-800 outline-none focus:border-blue-400 appearance-none">
-                      <option value="all">전체 템플릿</option>
-                      {lockedTemplates.map(r=><option key={r.fleet} value={r.fleet}>{r.name}</option>)}
-                    </select>
-                    <Icon name="ChevronDown" size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                  </div>
+                  <CheckCombo
+                    icon="Layers" placeholder="전체 Fleet"
+                    opts={fleets.map(f=>({id:f.id,label:f.name,color:f.color}))}
+                    val={reqFleetF} onChange={setReqFleetF}/>
+                  <CheckCombo
+                    icon="FileText" placeholder="전체 템플릿"
+                    opts={lockedTemplates.map(r=>({id:r.fleet,label:r.name,color:fleetMeta(r.fleet).color}))}
+                    val={reqTplF} onChange={setReqTplF}/>
                   <div className="flex items-center justify-between">
                     <span className="text-[10.5px] text-slate-500">{pendingOrders.length}건</span>
-                    {(reqFleetF!=="all"||reqTplF!=="all")&&(
-                      <button onClick={()=>{setReqFleetF("all");setReqTplF("all");setFilterTemplate(null);}}
+                    {isDirty&&(
+                      <button onClick={()=>{setReqFleetF(new Set());setReqTplF(new Set());setFilterTemplate(null);}}
                         className="text-[10.5px] text-blue-500 hover:text-blue-700 flex items-center gap-1">
                         <Icon name="RotateCcw" size={9}/> 초기화
                       </button>
