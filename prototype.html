@@ -4107,6 +4107,12 @@ function OrderTemplateView({ onNavigate }) {
   const [fleet,    setFleet]     = useState(null);
   const [form,     setForm]      = useState({});
   const [confirmed, setConfirmed]= useState(false);
+  const [schedMode, setSchedMode] = useState("immediate"); // "immediate" | "scheduled"
+  const [schedDate, setSchedDate] = useState(()=>{
+    const d=new Date(); return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+  });
+  const [schedHour, setSchedHour] = useState(new Date().getHours());
+  const [schedMin,  setSchedMin]  = useState(Math.ceil(new Date().getMinutes()/10)*10%60);
 
   const setF = (k,v) => setForm(p=>({...p,[k]:v}));
   const fleetDef = FLEETS.find(f=>f.id===fleet);
@@ -4245,13 +4251,15 @@ function OrderTemplateView({ onNavigate }) {
   const publish = ()=>{
     const ordId = "ORD-"+Date.now().toString().slice(-5);
     const now = new Date();
+    const startMin = schedMode==="immediate"
+      ? now.getHours()*60+now.getMinutes()+2
+      : schedHour*60+schedMin;
     const cartInfo = TOOL_CARTS.find(c=>c.id===form.cartId);
     const order = {
       id:ordId, fleet:fleetDef.id, fleetName:fleetDef.name, fleetColor:fleetDef.color,
       robotId:form.robotId||(fleetDef.robotIds[0]),
       pickNode:form.pickNode, dropNode:form.dropNode,
-      startMin:now.getHours()*60+now.getMinutes()+5,
-      duration:30, status:"pending",
+      startMin, duration:30, status:"pending",
       label:`${fleetDef.name} · ${form.pickNode}→${form.dropNode}`,
       detail: fleetDef.id==="amr"
         ? {cartId:form.cartId, cartCat:cartInfo?.cat}
@@ -4333,7 +4341,49 @@ function OrderTemplateView({ onNavigate }) {
               )}
 
               <div className="h-px bg-slate-100 my-1"/>
-              <Field label="담당 로봇">
+              <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide">요청 시간</div>
+              {/* 즉시 요청 버튼 */}
+              <div className="flex gap-2">
+                <button onClick={()=>setSchedMode("immediate")}
+                  className={"flex-1 h-8 rounded-lg border-2 text-[12px] font-semibold flex items-center justify-center gap-1.5 transition "+(schedMode==="immediate"?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600 hover:border-slate-300")}>
+                  <Icon name="Zap" size={12}/> 즉시
+                </button>
+                <button onClick={()=>setSchedMode("scheduled")}
+                  className={"flex-1 h-8 rounded-lg border-2 text-[12px] font-semibold flex items-center justify-center gap-1.5 transition "+(schedMode==="scheduled"?"border-blue-500 bg-blue-50 text-blue-700":"border-slate-200 text-slate-600 hover:border-slate-300")}>
+                  <Icon name="Clock" size={12}/> 예약
+                </button>
+              </div>
+              {schedMode==="scheduled"&&(
+                <div className="space-y-2">
+                  <div className="relative">
+                    <Icon name="Calendar" size={11} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                    <input type="date" value={schedDate} onChange={e=>setSchedDate(e.target.value)}
+                      className="w-full h-8 pl-7 pr-2 rounded-md border border-slate-200 bg-white text-[12px] text-slate-800 outline-none focus:border-blue-400"/>
+                  </div>
+                  <div className="flex gap-2">
+                    <div className="relative flex-1">
+                      <select value={schedHour} onChange={e=>setSchedHour(Number(e.target.value))}
+                        className="w-full h-8 pl-2.5 pr-6 rounded-md border border-slate-200 bg-white text-[12px] text-slate-800 outline-none focus:border-blue-400 appearance-none">
+                        {Array.from({length:24},(_,i)=><option key={i} value={i}>{String(i).padStart(2,"0")}시</option>)}
+                      </select>
+                      <Icon name="ChevronDown" size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                    </div>
+                    <div className="relative flex-1">
+                      <select value={schedMin} onChange={e=>setSchedMin(Number(e.target.value))}
+                        className="w-full h-8 pl-2.5 pr-6 rounded-md border border-slate-200 bg-white text-[12px] text-slate-800 outline-none focus:border-blue-400 appearance-none">
+                        {[0,10,20,30,40,50].map(m=><option key={m} value={m}>{String(m).padStart(2,"0")}분</option>)}
+                      </select>
+                      <Icon name="ChevronDown" size={10} className="absolute right-1.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                    </div>
+                  </div>
+                  <div className="text-[10.5px] text-slate-500 text-center">
+                    {schedDate} {String(schedHour).padStart(2,"0")}:{String(schedMin).padStart(2,"0")} 에 요청
+                  </div>
+                </div>
+              )}
+              {schedMode==="immediate"&&(
+                <div className="text-[10.5px] text-blue-600 text-center py-1">요청 즉시 실행 (약 2분 후 시작)</div>
+              )}
                 <Sel val={form.robotId} onChange={v=>setF("robotId",v)}
                   opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/>
               </Field>
@@ -4386,12 +4436,14 @@ function OrderTemplateView({ onNavigate }) {
 }
 
 
-function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted }) {
+function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNavigate }) {
   const [orders,setOrders]=useState(initOrders.map(o=>({...o})));
   const [selOrder,setSelOrder]=useState(null);
   const [draggingRcp,setDraggingRcp]=useState(null);
   const [hoverPrev,setHoverPrev]=useState(null);
   const [libOpen,setLibOpen]=useState(true);
+  const [libTab,setLibTab]=useState("library"); // "library" | "requests"
+  const [filterTemplate,setFilterTemplate]=useState(null); // filter 작업 요청 by template fleet
   const [now,setNow]=useState(11*60+12);
   const [hlRcp,setHlRcp]=useState(initialFocusRecipeId||null);
   const [addOpen,setAddOpen]=useState(false);
@@ -4641,34 +4693,147 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted }) {
         </div>
         {libOpen && (
           <aside className="w-72 shrink-0 border-l border-slate-200 bg-white flex flex-col">
-            {/* Header */}
-            <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2">
-              <Icon name="Library" size={14} className="text-slate-500"/>
-              <span className="text-[13px] font-semibold text-slate-900">템플릿 라이브러리</span>
-              <span className="text-[11px] text-slate-400 tnum">
-                {recipes.filter(r=>(libFleetF.size===0||libFleetF.has(r.fleet))&&(!libQ||r.name.toLowerCase().includes(libQ.toLowerCase()))).length}
-              </span>
+            {/* 탭 헤더 */}
+            <div className="h-12 px-3 border-b border-slate-200 flex items-center gap-1">
+              <button onClick={()=>setLibTab("library")}
+                className={"h-8 px-3 rounded-md text-[12.5px] font-semibold flex items-center gap-1.5 transition "+(libTab==="library"?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-50")}>
+                <Icon name="Library" size={13}/> 템플릿
+              </button>
+              <button onClick={()=>{setLibTab("requests");setFilterTemplate(null);}}
+                className={"h-8 px-3 rounded-md text-[12.5px] font-semibold flex items-center gap-1.5 transition "+(libTab==="requests"?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-50")}>
+                <Icon name="ClipboardList" size={13}/> 작업 요청 현황
+                {orders.filter(o=>o.status==="pending").length>0&&(
+                  <span className="w-5 h-5 rounded-full bg-purple-600 text-white text-[10px] font-bold grid place-items-center">
+                    {orders.filter(o=>o.status==="pending").length}
+                  </span>
+                )}
+              </button>
             </div>
 
-            {/* Search + Fleet filter */}
+            {/* ── 템플릿 라이브러리 탭 ── */}
+            {libTab==="library"&&(<>
             <div className="px-3 py-2.5 border-b border-slate-200 space-y-2">
-              {/* 검색 입력 */}
               <div className="relative">
                 <Icon name="Search" size={12} className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
-                <input
-                  value={libQ}
-                  onChange={e=>setLibQ(e.target.value)}
-                  placeholder="템플릿 검색"
-                  className="h-8 pl-7 pr-7 w-full rounded-md border border-slate-200 bg-slate-50 text-[12px] text-slate-800 outline-none focus:border-blue-400 focus:bg-white"
-                />
-                {libQ && (
-                  <button onClick={()=>setLibQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
-                    <Icon name="X" size={11}/>
-                  </button>
-                )}
+                <input value={libQ} onChange={e=>setLibQ(e.target.value)} placeholder="템플릿 검색"
+                  className="h-8 pl-7 pr-7 w-full rounded-md border border-slate-200 bg-slate-50 text-[12px] text-slate-800 outline-none focus:border-blue-400 focus:bg-white"/>
+                {libQ&&<button onClick={()=>setLibQ("")} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"><Icon name="X" size={11}/></button>}
               </div>
+              <AddFleetDropdown value={libFleetF} onChange={setLibFleetF} counts={Object.fromEntries(fleets.map(f=>[f.id,recipes.filter(r=>r.fleet===f.id).length]))}/>
+            </div>
+            <div className="flex-1 overflow-y-auto p-3 space-y-2">
+              {recipes
+                .filter(r=>(libFleetF.size===0||libFleetF.has(r.fleet))&&(!libQ||r.name.toLowerCase().includes(libQ.toLowerCase())))
+                .map(r=>{
+                  const fm=fleetMeta(r.fleet), dur=recipeDuration(r), isHL=r.id===hlRcp;
+                  // 이 템플릿(fleet)을 사용 중인 pending 오더 수
+                  const pendingCount = r.locked
+                    ? orders.filter(o=>o.status==="pending"&&o.fleet===r.fleet).length
+                    : orders.filter(o=>o.status==="pending"&&o.recipeId===r.id).length;
+                  return (
+                    <div key={r.id} draggable={!r.locked}
+                      onDragStart={e=>!r.locked&&onLibDragStart(e,r.id)}
+                      onDragEnd={()=>{setDraggingRcp(null);setHoverPrev(null);}}
+                      className={"group rounded-lg border bg-white p-3 select-none "+(r.locked?"cursor-default":"cursor-grab active:cursor-grabbing")+" "+(isHL?"border-amber-400 ring-2 ring-amber-200":"border-slate-200 hover:border-blue-400")}>
+                      <div className="flex items-start gap-2">
+                        <div className="w-7 h-7 rounded-md grid place-items-center shrink-0" style={{background:fm.color+"18",color:fm.color}}>
+                          {r.locked?<Icon name="Lock" size={12}/>:<Icon name="Workflow" size={13}/>}
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-1.5">
+                            <div className="text-[12px] font-medium text-slate-900 truncate flex-1">
+                              {libQ?(<span dangerouslySetInnerHTML={{__html:r.name.replace(new RegExp(`(${libQ})`,'gi'),'<mark style="background:#dbeafe;color:#1d4ed8;border-radius:2px">$1</mark>')}}/>):r.name}
+                            </div>
+                            {/* 사용 중 카운트 배지 */}
+                            {pendingCount>0&&(
+                              <button onClick={()=>{setLibTab("requests");setFilterTemplate(r.fleet);}}
+                                className="shrink-0 min-w-5 h-5 rounded-full bg-purple-600 hover:bg-purple-700 text-white text-[10px] font-bold px-1.5 transition">
+                                {pendingCount}
+                              </button>
+                            )}
+                          </div>
+                          <div className="flex items-center gap-1.5 mt-0.5">
+                            <span className="text-[10px] font-semibold px-1.5 py-px rounded" style={{background:fm.color+"20",color:fm.color}}>{fm.name}</span>
+                            <span className="text-[10px] text-slate-400 tnum">{r.id}</span>
+                          </div>
+                        </div>
+                        {!r.locked&&<Icon name="GripVertical" size={13} className="text-slate-300 group-hover:text-slate-500 mt-1"/>}
+                      </div>
+                      <div className="flex items-center gap-1 mt-2.5 overflow-hidden">
+                        {r.steps.slice(0,6).map((s,i)=>{const a=actMeta(s.actionType);return(<React.Fragment key={i}><div className="w-5 h-5 rounded grid place-items-center shrink-0" style={{background:a.color+"18"}}><Icon name={a.icon} size={10} style={{color:a.color}}/></div>{i<Math.min(r.steps.length,6)-1&&<div className="w-1 h-px bg-slate-300 shrink-0"/>}</React.Fragment>);})}
+                        <span className="ml-auto text-[10.5px] text-slate-500 tnum">{dur}분</span>
+                      </div>
+                    </div>
+                  );
+                })
+              }
+              {recipes.filter(r=>(libFleetF.size===0||libFleetF.has(r.fleet))&&(!libQ||r.name.toLowerCase().includes(libQ.toLowerCase()))).length===0&&(
+                <div className="py-8 text-center">
+                  <Icon name="SearchX" size={20} className="text-slate-300 mx-auto mb-2"/>
+                  <div className="text-[12px] text-slate-400">검색 결과가 없습니다</div>
+                  <button onClick={()=>{setLibQ("");setLibFleetF(new Set());}} className="mt-2 text-[11px] text-blue-500 hover:text-blue-700">필터 초기화</button>
+                </div>
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50/40 text-[10.5px] text-slate-500 flex gap-1.5">
+              <Icon name="Info" size={11} className="mt-0.5 shrink-0"/>
+              <span>앞뒤 작업 사이에 자동으로 <strong className="text-slate-700">{GANTT.BUFFER}분 버퍼</strong>가 적용됩니다.</span>
+            </div>
+            </>)}
 
-              {/* Fleet 멀티 필터 */}
+            {/* ── 작업 요청 현황 탭 ── */}
+            {libTab==="requests"&&(()=>{
+              const pendingOrders = orders.filter(o=>o.status==="pending"&&(filterTemplate?o.fleet===filterTemplate:true));
+              return (<>
+                <div className="px-3 py-2.5 border-b border-slate-200 flex items-center gap-2">
+                  {filterTemplate&&(
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-[11px] font-semibold shrink-0"
+                      style={{background:fleetMeta(filterTemplate).color+"15",color:fleetMeta(filterTemplate).color}}>
+                      {fleetMeta(filterTemplate).name}
+                      <button onClick={()=>setFilterTemplate(null)} className="ml-0.5 opacity-60 hover:opacity-100"><Icon name="X" size={10}/></button>
+                    </div>
+                  )}
+                  <span className="text-[11.5px] text-slate-500 ml-auto">총 {pendingOrders.length}건</span>
+                </div>
+                <div className="flex-1 overflow-y-auto p-3 space-y-2">
+                  {pendingOrders.length===0&&(
+                    <div className="py-10 text-center">
+                      <Icon name="ClipboardList" size={22} className="mx-auto text-slate-300 mb-2"/>
+                      <div className="text-[12.5px] font-medium text-slate-500">요청된 작업 없음</div>
+                      <div className="text-[11px] text-slate-400 mt-1">작업 요청 화면에서<br/>새 작업을 요청해 보세요</div>
+                    </div>
+                  )}
+                  {pendingOrders.map(o=>{
+                    const fm=fleetMeta(o.fleet||"amr");
+                    return(
+                      <div key={o.id} className="rounded-lg border border-purple-200 bg-purple-50/40 p-3">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-6 h-6 rounded-md grid place-items-center shrink-0" style={{background:fm.color+"18"}}>
+                            <Icon name="Send" size={11} style={{color:fm.color}}/>
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[12px] font-semibold text-slate-900 truncate">{o.label||o.id}</div>
+                            <div className="text-[10px] text-slate-400 tnum">{o.id}</div>
+                          </div>
+                          <span className="shrink-0 text-[10px] font-semibold px-1.5 py-0.5 rounded" style={{background:fm.color+"18",color:fm.color}}>{fm.name}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-1.5 text-[10.5px]">
+                          <div><span className="text-slate-400">Pick </span><span className="font-semibold text-slate-700">{o.pickNode||"—"}</span></div>
+                          <div><span className="text-slate-400">Drop </span><span className="font-semibold text-slate-700">{o.dropNode||"—"}</span></div>
+                          <div><span className="text-slate-400">로봇 </span><span className="font-semibold text-slate-700">{o.robotId}</span></div>
+                          <div><span className="text-slate-400">시작 </span><span className="font-semibold text-slate-700 tnum">{fmtTime(o.start)}</span></div>
+                        </div>
+                        {o.detail?.cartId&&<div className="mt-1.5 text-[10.5px]"><span className="text-slate-400">Cart </span><span className="font-semibold text-slate-700">{o.detail.cartId} ({o.detail.cartCat})</span></div>}
+                        {o.detail?.passengerId&&<div className="mt-1.5 text-[10.5px]"><span className="text-slate-400">승객 ID </span><span className="font-semibold text-slate-700">{o.detail.passengerId}</span></div>}
+                        {o.detail?.userId&&<div className="mt-1.5 text-[10.5px]"><span className="text-slate-400">사용자 ID </span><span className="font-semibold text-slate-700">{o.detail.userId}</span></div>}
+                      </div>
+                    );
+                  })}
+                </div>
+              </>);
+            })()}
+          </aside>
+        )}
               <MultiFleetDropdown
                 value={libFleetF}
                 onChange={setLibFleetF}
@@ -4815,7 +4980,9 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted }) {
         </div>
       )}
       {addOpen && (
-        <AddOrderDialog orders={orders} onClose={()=>setAddOpen(false)} onCreate={payload=>{
+        <AddOrderDialog orders={orders} onClose={()=>setAddOpen(false)}
+          onNavigateRequest={()=>{ if(onNavigate) onNavigate("order-template"); }}
+          onCreate={payload=>{
           const r=recipes.find(rr=>rr.id===payload.recipeId);if(!r)return;
           const dur=recipeDuration(r),p=computePlacement(orders,payload.robotId,payload.start,dur,null);
           setOrders(oo=>[...oo,{id:"ord-"+(1000+oo.length+Math.floor(Math.random()*99)),robotId:payload.robotId,recipeId:payload.recipeId,start:p.start,status:"queued"}]);
@@ -4854,10 +5021,12 @@ function AddFleetDropdown({ value, onChange }) {
   );
 }
 
-function AddOrderDialog({ orders, onClose, onCreate }) {
+function AddOrderDialog({ orders, onClose, onCreate, onNavigateRequest }) {
   const today=new Date();
   const todayStr=today.getFullYear()+"-"+String(today.getMonth()+1).padStart(2,"0")+"-"+String(today.getDate()).padStart(2,"0");
-  const [fleet,setFleet]=useState("amr");
+  const [fleet,setFleetRaw]=useState("semi");
+  const [deliveryWarn,setDeliveryWarn]=useState(null);
+  function setFleet(f){ if(["amr","agv","arm"].includes(f)){ setDeliveryWarn(f); } else { setFleetRaw(f); } }
   const fr=recipes.filter(r=>r.fleet===fleet);
   const rb=robots.filter(r=>r.fleet===fleet);
   const [recipeId,setRecipeId]=useState(fr[0]?.id||"");
@@ -4880,6 +5049,28 @@ function AddOrderDialog({ orders, onClose, onCreate }) {
   return (
     <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-center p-4" onClick={onClose}>
       <div className="w-[540px] bg-white rounded-xl shadow-2xl border border-slate-200 overflow-hidden" onClick={e=>e.stopPropagation()}>
+        {/* Delivery fleet 경고 팝업 */}
+        {deliveryWarn&&(
+          <div className="absolute inset-0 z-10 bg-white/95 backdrop-blur-sm flex items-center justify-center p-6">
+            <div className="bg-white rounded-2xl shadow-xl border border-slate-200 w-full max-w-sm p-6">
+              <div className="flex items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-amber-100 grid place-items-center shrink-0"><Icon name="AlertTriangle" size={20} className="text-amber-600"/></div>
+                <div>
+                  <div className="text-[15px] font-bold text-slate-900">작업 요청 화면 이동 필요</div>
+                  <div className="text-[12px] text-slate-500 mt-0.5">{fleetMeta(deliveryWarn).name}</div>
+                </div>
+              </div>
+              <p className="text-[13px] text-slate-700 leading-relaxed mb-5">
+                이 Fleet의 작업은 <strong>작업 요청 화면</strong>에서<br/>Pick/Drop 위치를 지정하여 요청해야 합니다.<br/>작업 요청 화면으로 이동하시겠습니까?
+              </p>
+              <div className="flex gap-3 justify-end">
+                <button onClick={()=>setDeliveryWarn(null)} className="h-9 px-5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[13px] font-medium text-slate-700">아니요</button>
+                <button onClick={()=>{onClose();if(onNavigateRequest)onNavigateRequest();}}
+                  className="h-9 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold">네, 이동합니다</button>
+              </div>
+            </div>
+          </div>
+        )}
         <div className="h-12 px-5 border-b border-slate-200 flex items-center gap-2">
           <div className="w-7 h-7 rounded-md bg-blue-50 grid place-items-center text-blue-600"><Icon name="CalendarPlus" size={14}/></div>
           <h3 className="text-[14px] font-semibold text-slate-900">새 작업 추가</h3>
@@ -5741,7 +5932,7 @@ function App() {
           {active==="home"          &&<MonitoringHome onNavigate={navigate}/>}
           {active==="work"          &&<RecipeView onSaveRecipe={saveRecipe}/>}
           {active==="order-template"&&<OrderTemplateView onNavigate={navigate}/>}
-          {active==="schedule"      &&<SchedulerView initialFocusRecipeId={focusRcp} pendingOrder={pendingOrder} onMounted={()=>setPendingOrder(null)}/>}
+          {active==="schedule"      &&<SchedulerView initialFocusRecipeId={focusRcp} pendingOrder={pendingOrder} onMounted={()=>setPendingOrder(null)} onNavigate={navigate}/>}
           {active==="analytics"   &&<AnalyticsView/>}
           {active==="robot-status"&&<RobotStatusView/>}
           {active==="infra-status"&&<InfraStatusView/>}
