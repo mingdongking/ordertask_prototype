@@ -4443,9 +4443,11 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
   const [draggingRcp,setDraggingRcp]=useState(null);
   const [hoverPrev,setHoverPrev]=useState(null);
   const [libOpen,setLibOpen]=useState(true);
-  const [libTab,setLibTab]=useState("library"); // "library" | "requests"
-  const [filterTemplate,setFilterTemplate]=useState(null); // filter 작업 요청 by template fleet
-  const [now,setNow]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});
+  const [libTab,setLibTab]=useState("library");
+  const [filterTemplate,setFilterTemplate]=useState(null);
+  const [reqFleetF,setReqFleetF]=useState("all");
+  const [reqTplF,setReqTplF]=useState("all");
+  const [now,setNow]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});});
   const [hlRcp,setHlRcp]=useState(initialFocusRecipeId||null);
   const [addOpen,setAddOpen]=useState(false);
   const [fleetF,setFleetF]=useState(new Set());
@@ -4486,10 +4488,18 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
     if(onMounted) onMounted();
   },[pendingOrder]);
 
+  useEffect(()=>{if(filterTemplate) setReqTplF(filterTemplate);},[filterTemplate]);
+
   const allR=robots;
   const visR=fleetF.size===0?allR:allR.filter(r=>fleetF.has(r.fleet));
 
   useEffect(()=>{const id=setInterval(()=>setNow(n=>n+1),8000);return()=>clearInterval(id);},[]);
+  useEffect(()=>{
+    // 초기 로드 시 현재 시점을 화면 중앙으로 스크롤
+    if(!ganttRef.current) return;
+    const centerOffset=(now-GANTT.startHour*60)*GANTT.pxPerMin - ganttRef.current.clientWidth/2;
+    ganttRef.current.scrollLeft=Math.max(0,centerOffset);
+  },[]);
   useEffect(()=>{
     const g=ganttRef.current,h=headRef.current;if(!g||!h)return;
     const fn=()=>{h.scrollLeft=g.scrollLeft;if(rColRef.current)rColRef.current.scrollTop=g.scrollTop;};
@@ -4513,19 +4523,18 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
       setHoverPrev({robotId:rId,start:timeFromX(e.clientX),duration:recipeDuration(r),recipeId:r.id,conflict:false,fleetMismatch:true});
       return;
     }
-    const dur=recipeDuration(r),start=timeFromX(e.clientX);
+    const dur=recipeDuration(r),start=Math.max(now+1,timeFromX(e.clientX));
     const p=computePlacement(orders,rId,start,dur,null);
-    setHoverPrev({robotId:rId,start:p.start,duration:dur,recipeId:r.id,conflict:p.conflict,fleetMismatch:false});
+    setHoverPrev({robotId:rId,start:p.start,duration:dur,recipeId:r.id,conflict:p.conflict,fleetMismatch:false,isPast:timeFromX(e.clientX)<now});
   }
   function onRowDrop(e,rId){
     e.preventDefault();if(!draggingRcp)return;
     const r=recipes.find(r=>r.id===draggingRcp);if(!r)return;
     const robot=visR.find(rb=>rb.id===rId);
-    // fleet 불일치 — 드롭 차단
-    if(robot && robot.fleet!==r.fleet){
-      setDraggingRcp(null);setHoverPrev(null);return;
-    }
-    const dur=recipeDuration(r),start=timeFromX(e.clientX);
+    if(robot && robot.fleet!==r.fleet){setDraggingRcp(null);setHoverPrev(null);return;}
+    // 현재 시점 이전 드롭 차단
+    if(timeFromX(e.clientX)<now){setDraggingRcp(null);setHoverPrev(null);return;}
+    const dur=recipeDuration(r),start=Math.max(now+1,timeFromX(e.clientX));
     const p=computePlacement(orders,rId,start,dur,null);
     setOrders(o=>[...o,{id:"ord-"+(1000+o.length),robotId:rId,recipeId:r.id,start:p.start,status:"queued"}]);
     setDraggingRcp(null);setHoverPrev(null);
@@ -4802,9 +4811,6 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
 
             {/* ── 작업 요청 현황 탭 ── */}
             {libTab==="requests"&&(()=>{
-              const [reqFleetF, setReqFleetF] = React.useState("all");
-              const [reqTplF,   setReqTplF]   = React.useState(filterTemplate||"all");
-              React.useEffect(()=>{ setReqTplF(filterTemplate||"all"); },[filterTemplate]);
               const pendingOrders = orders.filter(o=>{
                 if(o.status!=="pending") return false;
                 if(reqFleetF!=="all" && o.fleet!==reqFleetF) return false;
@@ -4955,7 +4961,7 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
                   ))}
                 </div>
                 <div className="px-5 py-3 flex items-center gap-2">
-                  {isEditable(selOrder)?<>
+                  {(isEditable(selOrder)||selOrder.status==="pending")?<>
                     <button onClick={()=>copyOrder(selOrder)} className="flex-1 h-9 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700 flex items-center justify-center gap-1.5"><Icon name="Copy" size={13}/> 복사</button>
                     <button onClick={()=>deleteOrder(selOrder)} className="h-9 px-3 rounded-md border border-rose-200 bg-white hover:bg-rose-50 text-[12.5px] font-medium text-rose-600 flex items-center justify-center gap-1.5"><Icon name="Trash2" size={13}/></button>
                   </>:<div className="flex-1 h-9 rounded-md bg-slate-50 border border-slate-200 text-[11.5px] text-slate-500 flex items-center justify-center gap-1.5"><Icon name="Lock" size={12}/>
@@ -4963,7 +4969,6 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
                     {selOrder.status==="running"&&"진행 중인 작업은 수정할 수 없습니다"}
                     {selOrder.status==="error"&&"실패 - 시스템 검토 필요"}
                     {selOrder.status==="queued"&&"현재 시점 이후 작업만 수정 가능"}
-                    {selOrder.status==="pending"&&"담당자 배정 후 확정 필요"}
                   </div>}
                 </div>
               </>);
