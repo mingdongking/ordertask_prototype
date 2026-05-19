@@ -4835,67 +4835,6 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
             })()}
           </aside>
         )}
-              <MultiFleetDropdown
-                value={libFleetF}
-                onChange={setLibFleetF}
-                counts={Object.fromEntries(fleets.map(f=>[f.id,recipes.filter(r=>r.fleet===f.id).length]))}
-              />
-            </div>
-
-            {/* Recipe list */}
-            <div className="flex-1 overflow-y-auto px-3 py-2 space-y-2">
-              <div className="text-[10.5px] text-slate-400 px-1 pt-1 flex items-center gap-1">
-                <Icon name="GripVertical" size={11}/> 간트로 드래그하여 스케줄
-              </div>
-              {recipes
-                .filter(r =>
-                  (libFleetF.size===0 || libFleetF.has(r.fleet)) &&
-                  (!libQ || r.name.toLowerCase().includes(libQ.toLowerCase()))
-                )
-                .map(r=>{
-                  const fm=fleetMeta(r.fleet),dur=recipeDuration(r),isHL=r.id===hlRcp;
-                  return (
-                    <div key={r.id} draggable onDragStart={e=>onLibDragStart(e,r.id)} onDragEnd={()=>{setDraggingRcp(null);setHoverPrev(null);}}
-                      className={"group rounded-lg border bg-white p-3 cursor-grab active:cursor-grabbing select-none "+(isHL?"border-amber-400 ring-2 ring-amber-200":"border-slate-200 hover:border-blue-400")}>
-                      <div className="flex items-start gap-2">
-                        <div className="w-7 h-7 rounded-md grid place-items-center shrink-0" style={{background:fm.color+"18",color:fm.color}}><Icon name="Workflow" size={13}/></div>
-                        <div className="flex-1 min-w-0">
-                          <div className="text-[12.5px] font-medium text-slate-900 truncate">
-                            {libQ ? (
-                              <span dangerouslySetInnerHTML={{__html: r.name.replace(new RegExp(`(${libQ})`, 'gi'), '<mark style="background:#dbeafe;color:#1d4ed8;border-radius:2px">$1</mark>')}}/>
-                            ) : r.name}
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-0.5">
-                            <span className="text-[10px] font-semibold px-1.5 py-px rounded" style={{background:fm.color+"20",color:fm.color}}>{fm.name}</span>
-                            <span className="text-[10px] text-slate-400 tnum">{r.id}</span>
-                          </div>
-                        </div>
-                        <Icon name="GripVertical" size={13} className="text-slate-300 group-hover:text-slate-500 mt-1"/>
-                      </div>
-                      <div className="flex items-center gap-1 mt-2.5 overflow-hidden">
-                        {r.steps.slice(0,6).map((s,i)=>{const a=actMeta(s.actionType);return(<React.Fragment key={i}><div className="w-5 h-5 rounded grid place-items-center shrink-0" style={{background:a.color+"18"}}><Icon name={a.icon} size={10} style={{color:a.color}}/></div>{i<Math.min(r.steps.length,6)-1&&<div className="w-1 h-px bg-slate-300 shrink-0"/>}</React.Fragment>);})}
-                        <span className="ml-auto text-[10.5px] text-slate-500 tnum">{dur}분</span>
-                      </div>
-                    </div>
-                  );
-                })
-              }
-              {/* 검색 결과 없음 */}
-              {recipes.filter(r=>(libFleetF.size===0||libFleetF.has(r.fleet))&&(!libQ||r.name.toLowerCase().includes(libQ.toLowerCase()))).length===0 && (
-                <div className="py-8 text-center">
-                  <Icon name="SearchX" size={20} className="text-slate-300 mx-auto mb-2"/>
-                  <div className="text-[12px] text-slate-400">검색 결과가 없습니다</div>
-                  <button onClick={()=>{setLibQ("");setLibFleetF(new Set());}} className="mt-2 text-[11px] text-blue-500 hover:text-blue-700">필터 초기화</button>
-                </div>
-              )}
-            </div>
-
-            <div className="px-4 py-3 border-t border-slate-200 bg-slate-50/40 text-[10.5px] text-slate-500 flex gap-1.5">
-              <Icon name="Info" size={11} className="mt-0.5 shrink-0"/>
-              <span>앞뒤 작업 사이에 자동으로 <strong className="text-slate-700">{GANTT.BUFFER}분 버퍼</strong>가 적용됩니다.</span>
-            </div>
-          </aside>
-        )}
       </div>
       {selOrder && (
         <div className="fixed inset-0 z-40 flex items-end justify-end p-4 pointer-events-none">
