@@ -257,28 +257,21 @@ const mapNodes = [
   { id:"MN-12", label:"ARM 워크셀 B",x:430, y:360, fleets:["arm"] },
 ];
 let recipes = [
-  { id:"rcp-tool", name:"Delivery-Tool 기본 템플릿", fleet:"amr", status:"published", locked:true,
+  { id:"rcp-tool",  name:"Delivery-Tool 기본 템플릿",  fleet:"amr",  status:"published", locked:true,
     steps:[{nodeId:"PICK",actionType:"MOVE",duration:5},{nodeId:"PICK",actionType:"LOAD",duration:3},{nodeId:"DROP",actionType:"MOVE",duration:5},{nodeId:"DROP",actionType:"UNLOAD",duration:3}],
     nodes:[], lockedDesc:"Pick/Drop 노드는 오더 발행 시 지정됩니다." },
-  { id:"rcp-ride", name:"Ride 기본 템플릿", fleet:"agv", status:"published", locked:true,
+  { id:"rcp-ride",  name:"Ride 기본 템플릿",            fleet:"agv",  status:"published", locked:true,
     steps:[{nodeId:"PICKUP",actionType:"MOVE",duration:5},{nodeId:"PICKUP",actionType:"LOAD",duration:2},{nodeId:"DROPOFF",actionType:"MOVE",duration:5},{nodeId:"DROPOFF",actionType:"UNLOAD",duration:2}],
     nodes:[], lockedDesc:"승차/하차 위치는 오더 발행 시 지정됩니다." },
-  { id:"rcp-parts", name:"Delivery-Parts 기본 템플릿", fleet:"arm", status:"published", locked:true,
+  { id:"rcp-parts", name:"Delivery-Parts 기본 템플릿", fleet:"arm",  status:"published", locked:true,
     steps:[{nodeId:"PICK",actionType:"MOVE",duration:5},{nodeId:"PICK",actionType:"LOAD",duration:4},{nodeId:"DROP",actionType:"MOVE",duration:5},{nodeId:"DROP",actionType:"UNLOAD",duration:4}],
     nodes:[], lockedDesc:"Pick/Drop 노드는 오더 발행 시 지정됩니다." },
-  { id:"rcp-01", name:"A동→B동 자재이송", fleet:"amr", status:"published",
-    steps:[{nodeId:"N1",actionType:"MOVE",duration:6},{nodeId:"N2",actionType:"LOAD",duration:5},{nodeId:"N3",actionType:"MOVE",duration:9},{nodeId:"N4",actionType:"UNLOAD",duration:5}],
-    nodes:[{id:"N1",x:120,y:140,label:"Pick-A"},{id:"N2",x:280,y:140,label:"Load-A"},{id:"N3",x:460,y:260,label:"Drop-B"},{id:"N4",x:600,y:260,label:"Stage-B"}]},
-  { id:"rcp-02", name:"QC 라인 검수 순회", fleet:"amr", status:"published",
-    steps:[{nodeId:"N1",actionType:"MOVE",duration:4},{nodeId:"N2",actionType:"SCAN",duration:3},{nodeId:"N3",actionType:"MOVE",duration:5},{nodeId:"N4",actionType:"SCAN",duration:3},{nodeId:"N5",actionType:"MOVE",duration:5}], nodes:[]},
-  { id:"rcp-03", name:"충전 스테이션 복귀", fleet:"amr", status:"published",
-    steps:[{nodeId:"N1",actionType:"MOVE",duration:7},{nodeId:"N2",actionType:"CHARGE",duration:25}], nodes:[]},
-  { id:"rcp-04", name:"팔레트 적재 시퀀스", fleet:"arm", status:"draft",
-    steps:[{nodeId:"N1",actionType:"WAIT",duration:2},{nodeId:"N2",actionType:"LIFT",duration:4},{nodeId:"N3",actionType:"LOAD",duration:6}], nodes:[]},
-  { id:"rcp-05", name:"AGV 라인 보충", fleet:"agv", status:"published",
-    steps:[{nodeId:"N1",actionType:"MOVE",duration:10},{nodeId:"N2",actionType:"UNLOAD",duration:5},{nodeId:"N3",actionType:"MOVE",duration:8}], nodes:[]},
-  { id:"rcp-06", name:"야간 순찰 루틴", fleet:"amr", status:"draft",
-    steps:[{nodeId:"N1",actionType:"MOVE",duration:12},{nodeId:"N2",actionType:"SCAN",duration:3},{nodeId:"N3",actionType:"MOVE",duration:12}], nodes:[]},
+  { id:"rcp-s01",   name:"웨이퍼 핸들링 시퀀스",       fleet:"semi", status:"published",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:4},{nodeId:"N2",actionType:"LOAD",duration:6},{nodeId:"N3",actionType:"MOVE",duration:5},{nodeId:"N4",actionType:"SCAN",duration:4},{nodeId:"N5",actionType:"UNLOAD",duration:6}], nodes:[]},
+  { id:"rcp-s02",   name:"클린룸 반입 루틴",            fleet:"semi", status:"published",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:6},{nodeId:"N2",actionType:"LOAD",duration:5},{nodeId:"N3",actionType:"MOVE",duration:8},{nodeId:"N4",actionType:"UNLOAD",duration:4}], nodes:[]},
+  { id:"rcp-s03",   name:"카세트 이송 표준",            fleet:"semi", status:"draft",
+    steps:[{nodeId:"N1",actionType:"MOVE",duration:3},{nodeId:"N2",actionType:"LIFT",duration:5},{nodeId:"N3",actionType:"MOVE",duration:7},{nodeId:"N4",actionType:"UNLOAD",duration:5}], nodes:[]},
 ];
 const recipeDuration = r => r.steps.reduce((s,st)=>s+st.duration,0);
 const initOrders = [
@@ -329,7 +322,7 @@ const NAV = [
   { id:"home",        label:"모니터링 홈",   icon:"LayoutDashboard" },
   { id:"work",        label:"작업 관리",     icon:"Workflow",
     children:[
-      { id:"order-template", label:"오더 템플릿",   icon:"ClipboardList" },
+      { id:"order-template", label:"작업 요청",   icon:"ClipboardList" },
       { id:"schedule",       label:"작업 스케줄링", icon:"CalendarRange" },
     ]
   },
@@ -3507,8 +3500,9 @@ function RecipeList({ recipes, meta, tempCount, onEdit, onNew }) {
 function RecipeBuilder({ recipeId, onBack, onSave }) {
   const initial = recipes.find(r=>r.id===recipeId);
   const [name,setName]=useState(initial?initial.name:"신규 레시피");
-  const [fleet,setFleet]=useState(initial?initial.fleet:"amr");
+  const [fleet,setFleet]=useState(initial?initial.fleet:"semi");
   const [fleetOpen,setFleetOpen]=useState(false);
+  const [deliveryWarn,setDeliveryWarn]=useState(null); // fleet id pending confirm
   const [saved,setSaved]=useState(false); // Save 성공 토스트
 
   function handleSave() {
@@ -3634,15 +3628,52 @@ function RecipeBuilder({ recipeId, onBack, onSave }) {
                 <div className="fixed inset-0 z-10" onClick={()=>setFleetOpen(false)}/>
                 <div className="absolute z-20 top-full mt-1 left-0 right-0 bg-white rounded-lg shadow-xl border border-slate-200 py-1 overflow-hidden">
                   {fleets.map(f=>(
-                    <button key={f.id} onClick={()=>{setFleet(f.id);setFleetOpen(false);}}
+                    <button key={f.id} onClick={()=>{
+                      setFleetOpen(false);
+                      if(["amr","agv","arm"].includes(f.id)){
+                        setDeliveryWarn(f.id);
+                      } else {
+                        setFleet(f.id);
+                      }
+                    }}
                       className={"w-full flex items-center gap-2.5 px-3 py-2 hover:bg-blue-50 "+(f.id===fleet?"bg-blue-50":"")}>
-                      
                       <span className={"text-[12.5px] flex-1 "+(f.id===fleet?"text-blue-700 font-semibold":"text-slate-700")}>{f.name}</span>
+                      {["amr","agv","arm"].includes(f.id)&&<Icon name="Lock" size={11} className="text-amber-400"/>}
                       {f.id===fleet&&<Icon name="Check" size={12} className="text-blue-600"/>}
                     </button>
                   ))}
                 </div>
               </>}
+              {/* Delivery fleet 경고 팝업 */}
+              {deliveryWarn&&(
+                <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-sm grid place-items-center" onClick={()=>setDeliveryWarn(null)}>
+                  <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-[400px] p-6 mx-4" onClick={e=>e.stopPropagation()}>
+                    <div className="flex items-center gap-3 mb-4">
+                      <div className="w-10 h-10 rounded-xl bg-amber-100 grid place-items-center shrink-0">
+                        <Icon name="AlertTriangle" size={20} className="text-amber-600"/>
+                      </div>
+                      <div>
+                        <div className="text-[15px] font-bold text-slate-900">기본 템플릿 지정 Fleet</div>
+                        <div className="text-[12px] text-slate-500 mt-0.5">{fleets.find(f=>f.id===deliveryWarn)?.name}</div>
+                      </div>
+                    </div>
+                    <p className="text-[13px] text-slate-700 leading-relaxed mb-5">
+                      이 Fleet에는 기본 템플릿이 이미 지정되어 있습니다.<br/>
+                      새 템플릿을 생성하시겠습니까?
+                    </p>
+                    <div className="flex gap-3 justify-end">
+                      <button onClick={()=>setDeliveryWarn(null)}
+                        className="h-9 px-5 rounded-lg border border-slate-200 bg-white hover:bg-slate-50 text-[13px] font-medium text-slate-700">
+                        아니요
+                      </button>
+                      <button onClick={()=>{setFleet(deliveryWarn);setDeliveryWarn(null);}}
+                        className="h-9 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold">
+                        네, 생성합니다
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
@@ -4068,173 +4099,169 @@ function OrderTemplateView({ onNavigate }) {
     { id:"agv",  name:"Ride",           icon:"Users",   color:"#10b981", robotIds:["Ride001","Ride002"] },
     { id:"arm",  name:"Delivery-Parts", icon:"Package", color:"#7c3aed", robotIds:["Part001","Part002"] },
   ];
-  const NODES = mapNodes.map(n=>({id:n.id, label:n.label}));
-  // Tool Cart 데이터 (카트 ID + 카테고리)
   const TOOL_CARTS = [
     {id:"TC-001",cat:"CPT"},{id:"TC-002",cat:"CTR"},{id:"TC-003",cat:"CBT"},
     {id:"TC-004",cat:"CLV"},{id:"TC-005",cat:"CPS"},
   ];
 
-  const [step, setStep] = useState(1);
-  const [fleet, setFleet] = useState(null);
-  const [form, setForm] = useState({});
+  const [fleet,    setFleet]     = useState(null);
+  const [form,     setForm]      = useState({});
+  const [mapClick, setMapClick]  = useState(null); // "pick" | "drop" | null
+  const [confirmed, setConfirmed]= useState(false);
+
   const setF = (k,v) => setForm(p=>({...p,[k]:v}));
   const fleetDef = FLEETS.find(f=>f.id===fleet);
+  const pickNode = mapNodes.find(n=>n.id===form.pickNode);
+  const dropNode = mapNodes.find(n=>n.id===form.dropNode);
 
-  /* ── 공통 컴포넌트 ── */
+  /* ── 노드 클릭 처리 ── */
+  function handleNodeClick(nodeId){
+    if(!mapClick) return;
+    setF(mapClick+"Node", nodeId);
+    setMapClick(null);
+  }
+
+  /* ── 미니맵 (전체 화면) ── */
+  const W=600, H=420, scale=0.72, OX=40, OY=30;
+  const MapArea = ()=>(
+    <div className="flex-1 min-h-0 relative bg-[#f8fafc] rounded-xl border border-slate-200 overflow-hidden">
+      <div className="absolute top-3 left-3 z-10 flex gap-2">
+        {mapClick==="pick"&&(
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-blue-600 text-white text-[12px] font-semibold shadow-md animate-pulse">
+            <Icon name="MapPin" size={13}/> 맵에서 Pick 위치 클릭
+          </div>
+        )}
+        {mapClick==="drop"&&(
+          <div className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-emerald-600 text-white text-[12px] font-semibold shadow-md animate-pulse">
+            <Icon name="MapPin" size={13}/> 맵에서 Drop 위치 클릭
+          </div>
+        )}
+        {mapClick&&(
+          <button onClick={()=>setMapClick(null)} className="px-2.5 py-1.5 rounded-lg bg-white border border-slate-200 text-[11.5px] text-slate-600 shadow-sm">취소</button>
+        )}
+      </div>
+      <svg width="100%" height="100%" viewBox={`0 0 ${W} ${H}`} style={{cursor:mapClick?"crosshair":"default"}}>
+        {/* 엣지 */}
+        {mapEdges.map(e=>{
+          const a=mapNodes.find(n=>n.id===e.from), b=mapNodes.find(n=>n.id===e.to);
+          if(!a||!b) return null;
+          return <line key={e.id}
+            x1={a.x*scale+OX} y1={a.y*scale+OY}
+            x2={b.x*scale+OX} y2={b.y*scale+OY}
+            stroke="#cbd5e1" strokeWidth={1.5} strokeDasharray="5 3" opacity={0.7}/>;
+        })}
+        {/* Pick→Drop 경로 */}
+        {pickNode&&dropNode&&(
+          <line x1={pickNode.x*scale+OX} y1={pickNode.y*scale+OY}
+                x2={dropNode.x*scale+OX} y2={dropNode.y*scale+OY}
+            stroke="#6366f1" strokeWidth={2.5} strokeDasharray="8 4" opacity={0.7}/>
+        )}
+        {/* 노드 */}
+        {mapNodes.map(n=>{
+          const cx=n.x*scale+OX, cy=n.y*scale+OY;
+          const isPick=n.id===form.pickNode, isDrop=n.id===form.dropNode;
+          const isHover=mapClick!=null;
+          return (
+            <g key={n.id} style={{cursor:mapClick?"pointer":"default"}} onClick={()=>handleNodeClick(n.id)}>
+              {(isPick||isDrop)&&<circle cx={cx} cy={cy} r={16} fill={isPick?"#2563eb22":"#10b98122"} stroke={isPick?"#2563eb":"#10b981"} strokeWidth={1.5} strokeDasharray="3 2"/>}
+              <rect x={cx-7} y={cy-7} width={14} height={14} rx={3}
+                fill={isPick?"#2563eb":isDrop?"#10b981":isHover?"#f1f5f9":"white"}
+                stroke={isPick?"#2563eb":isDrop?"#10b981":isHover?"#94a3b8":"#94a3b8"}
+                strokeWidth={isPick||isDrop?2:1.5}/>
+              {isPick&&<Icon name="MapPin" size={10} x={cx-5} y={cy-5} className="text-white" style={{fill:"white"}}/>}
+              <text x={cx} y={cy+22} textAnchor="middle" fontSize={isHover?9:8.5}
+                fontWeight={isPick||isDrop?"700":"500"}
+                fill={isPick?"#1d4ed8":isDrop?"#059669":"#475569"}>
+                {n.label}
+              </text>
+              {(isPick||isDrop)&&(
+                <text x={cx} y={cy-16} textAnchor="middle" fontSize={9} fontWeight="700"
+                  fill={isPick?"#1d4ed8":"#059669"}>
+                  {isPick?"Pick":"Drop"}
+                </text>
+              )}
+            </g>
+          );
+        })}
+      </svg>
+      {/* 범례 */}
+      <div className="absolute bottom-3 right-3 bg-white/90 backdrop-blur-sm rounded-lg border border-slate-200 px-3 py-2 flex gap-4 text-[11px]">
+        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-blue-600"/><span className="text-slate-600">Pick</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-3 h-3 rounded-sm bg-emerald-500"/><span className="text-slate-600">Drop</span></div>
+        <div className="flex items-center gap-1.5"><div className="w-4 h-0.5 bg-indigo-400" style={{backgroundImage:"repeating-linear-gradient(90deg,#6366f1 0,#6366f1 6px,transparent 6px,transparent 10px)"}}/><span className="text-slate-600">경로</span></div>
+      </div>
+    </div>
+  );
+
+  /* ── 공통 UI ── */
   const Field = ({label,children,required})=>(
-    <div className="space-y-1.5">
-      <label className="text-[12px] font-semibold text-slate-600">{label}{required&&<span className="text-rose-500 ml-0.5">*</span>}</label>
+    <div className="space-y-1">
+      <label className="text-[11.5px] font-semibold text-slate-600">{label}{required&&<span className="text-rose-500 ml-0.5">*</span>}</label>
       {children}
     </div>
   );
+  const NodeSelect = ({field, label, color})=>{
+    const nodeId = form[field];
+    const node = mapNodes.find(n=>n.id===nodeId);
+    const isSelecting = mapClick===field;
+    return (
+      <Field label={label} required>
+        <div className="flex gap-1.5">
+          <div className="relative flex-1">
+            <select value={nodeId||""} onChange={e=>setF(field,e.target.value)}
+              className="w-full h-8 pl-2.5 pr-7 rounded-md border text-[12px] outline-none appearance-none"
+              style={{borderColor:node?color+"80":"#e2e8f0", background:node?color+"08":"white", color:"#1e293b"}}>
+              <option value="">드롭다운 선택</option>
+              {mapNodes.map(n=><option key={n.id} value={n.id}>{n.label} ({n.id})</option>)}
+            </select>
+            <Icon name="ChevronDown" size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+          </div>
+          <button onClick={()=>setMapClick(isSelecting?null:field)}
+            title="맵에서 직접 선택"
+            className={"h-8 w-8 rounded-md border grid place-items-center transition "+(isSelecting?"border-2 text-white":"border-slate-200 text-slate-500 hover:border-slate-300")}
+            style={isSelecting?{background:color,borderColor:color}:{}}>
+            <Icon name="MapPin" size={13}/>
+          </button>
+        </div>
+        {node&&<div className="text-[10.5px] mt-0.5 font-medium" style={{color}}>{node.label} ({node.id})</div>}
+      </Field>
+    );
+  };
   const Sel = ({val,onChange,opts,placeholder})=>(
     <div className="relative">
       <select value={val||""} onChange={e=>onChange(e.target.value)}
-        className="w-full h-9 pl-3 pr-8 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 appearance-none">
+        className="w-full h-8 pl-2.5 pr-7 rounded-md border border-slate-200 bg-white text-[12px] text-slate-800 outline-none focus:border-blue-400 appearance-none">
         <option value="">{placeholder||"선택"}</option>
         {opts.map(o=><option key={o.id||o} value={o.id||o}>{o.label||o}</option>)}
       </select>
-      <Icon name="ChevronDown" size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+      <Icon name="ChevronDown" size={11} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
     </div>
   );
   const Inp = ({val,onChange,placeholder})=>(
     <input value={val||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
-      className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"/>
+      className="w-full h-8 px-2.5 rounded-md border border-slate-200 bg-white text-[12px] text-slate-800 outline-none focus:border-blue-400"/>
   );
 
-  /* ── 맵 미니뷰 ── */
-  const MiniMap = ()=>{
-    const W=340, H=240, scale=0.55;
-    const pickN = mapNodes.find(n=>n.id===form.pickNode);
-    const dropN = mapNodes.find(n=>n.id===form.dropNode);
-    return (
-      <div className="rounded-xl border border-slate-200 bg-slate-50 overflow-hidden">
-        <div className="px-3 py-2 border-b border-slate-200 bg-white flex items-center gap-2">
-          <Icon name="Map" size={13} className="text-slate-500"/>
-          <span className="text-[12px] font-semibold text-slate-700">위치 확인</span>
-          {pickN&&<span className="text-[10.5px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 font-medium">Pick: {pickN.label}</span>}
-          {dropN&&<span className="text-[10.5px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-700 font-medium">Drop: {dropN.label}</span>}
-        </div>
-        <div className="relative bg-[#f8fafc]" style={{width:W,height:H,overflow:"hidden"}}>
-          <svg width={W} height={H} style={{position:"absolute",inset:0}}>
-            {/* 엣지 */}
-            {mapEdges.map(e=>{
-              const a=mapNodes.find(n=>n.id===e.from), b=mapNodes.find(n=>n.id===e.to);
-              if(!a||!b) return null;
-              return <line key={e.id} x1={a.x*scale+20} y1={a.y*scale+20} x2={b.x*scale+20} y2={b.y*scale+20}
-                stroke="#cbd5e1" strokeWidth={1.5} strokeDasharray="4 2" opacity={0.7}/>;
-            })}
-            {/* 노드 */}
-            {mapNodes.map(n=>{
-              const isPick = n.id===form.pickNode;
-              const isDrop = n.id===form.dropNode;
-              const cx=n.x*scale+20, cy=n.y*scale+20;
-              return (
-                <g key={n.id}>
-                  <circle cx={cx} cy={cy} r={isPick||isDrop?8:5}
-                    fill={isPick?"#2563eb":isDrop?"#10b981":"white"}
-                    stroke={isPick?"#2563eb":isDrop?"#10b981":"#94a3b8"}
-                    strokeWidth={isPick||isDrop?2:1.5}/>
-                  {(isPick||isDrop)&&(
-                    <text x={cx} y={cy-12} textAnchor="middle" fontSize={9} fontWeight="700"
-                      fill={isPick?"#2563eb":"#10b981"}>{n.label}</text>
-                  )}
-                  {(!isPick&&!isDrop)&&(
-                    <text x={cx} y={cy+16} textAnchor="middle" fontSize={7.5} fill="#94a3b8">{n.label}</text>
-                  )}
-                </g>
-              );
-            })}
-            {/* Pick→Drop 연결선 */}
-            {pickN&&dropN&&(
-              <line x1={pickN.x*scale+20} y1={pickN.y*scale+20}
-                    x2={dropN.x*scale+20} y2={dropN.y*scale+20}
-                stroke="#6366f1" strokeWidth={2} strokeDasharray="6 3" opacity={0.6}/>
-            )}
-          </svg>
-          {!pickN&&!dropN&&(
-            <div className="absolute inset-0 flex items-center justify-center">
-              <div className="text-center">
-                <Icon name="MapPin" size={20} className="mx-auto text-slate-300 mb-1"/>
-                <div className="text-[11px] text-slate-400">Pick/Drop 위치를 선택하면<br/>맵에 표시됩니다</div>
-              </div>
-            </div>
-          )}
-        </div>
-      </div>
-    );
-  };
-
-  /* ── Fleet별 폼 ── */
-  const renderForm = () => {
-    if(!fleetDef) return null;
-    if(fleetDef.id==="amr") return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Pick 위치" required><Sel val={form.pickNode} onChange={v=>setF("pickNode",v)} opts={NODES} placeholder="Pick 노드 선택"/></Field>
-          <Field label="Drop 위치" required><Sel val={form.dropNode} onChange={v=>setF("dropNode",v)} opts={NODES} placeholder="Drop 노드 선택"/></Field>
-        </div>
-        <Field label="Tool Cart" required>
-          <Sel val={form.cartId} onChange={v=>setF("cartId",v)}
-            opts={TOOL_CARTS.map(c=>({id:c.id,label:`${c.id}  ·  카테고리: ${c.cat}`}))}
-            placeholder="Cart 선택"/>
-        </Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="담당 로봇"><Sel val={form.robotId} onChange={v=>setF("robotId",v)} opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/></Field>
-          <Field label="우선순위"><Sel val={form.priority} onChange={v=>setF("priority",v)} opts={[{id:"normal",label:"일반"},{id:"high",label:"높음"},{id:"urgent",label:"긴급"}]} placeholder="일반"/></Field>
-        </div>
-        <Field label="메모"><Inp val={form.memo} onChange={v=>setF("memo",v)} placeholder="특이사항 입력 (선택)"/></Field>
-      </div>
-    );
-    if(fleetDef.id==="agv") return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="승차 위치" required><Sel val={form.pickNode} onChange={v=>setF("pickNode",v)} opts={NODES} placeholder="승차 노드 선택"/></Field>
-          <Field label="하차 위치" required><Sel val={form.dropNode} onChange={v=>setF("dropNode",v)} opts={NODES} placeholder="하차 노드 선택"/></Field>
-        </div>
-        <Field label="승객 ID" required><Inp val={form.passengerId} onChange={v=>setF("passengerId",v)} placeholder="사번 또는 ID 입력"/></Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="담당 로봇"><Sel val={form.robotId} onChange={v=>setF("robotId",v)} opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/></Field>
-          <Field label="우선순위"><Sel val={form.priority} onChange={v=>setF("priority",v)} opts={[{id:"normal",label:"일반"},{id:"high",label:"높음"},{id:"urgent",label:"긴급"}]} placeholder="일반"/></Field>
-        </div>
-        <Field label="메모"><Inp val={form.memo} onChange={v=>setF("memo",v)} placeholder="특이사항 입력 (선택)"/></Field>
-      </div>
-    );
-    if(fleetDef.id==="arm") return (
-      <div className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="Pick 위치" required><Sel val={form.pickNode} onChange={v=>setF("pickNode",v)} opts={NODES} placeholder="Pick 노드 선택"/></Field>
-          <Field label="Drop 위치" required><Sel val={form.dropNode} onChange={v=>setF("dropNode",v)} opts={NODES} placeholder="Drop 노드 선택"/></Field>
-        </div>
-        <Field label="사용자 ID" required><Inp val={form.userId} onChange={v=>setF("userId",v)} placeholder="사번 또는 ID 입력"/></Field>
-        <div className="grid grid-cols-2 gap-4">
-          <Field label="담당 로봇"><Sel val={form.robotId} onChange={v=>setF("robotId",v)} opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/></Field>
-          <Field label="우선순위"><Sel val={form.priority} onChange={v=>setF("priority",v)} opts={[{id:"normal",label:"일반"},{id:"high",label:"높음"},{id:"urgent",label:"긴급"}]} placeholder="일반"/></Field>
-        </div>
-        <Field label="메모"><Inp val={form.memo} onChange={v=>setF("memo",v)} placeholder="특이사항 입력 (선택)"/></Field>
-      </div>
-    );
-  };
-
+  /* ── 유효성 검사 ── */
   const isValid = ()=>{
     if(!fleet||!form.pickNode||!form.dropNode) return false;
-    if(fleetDef?.id==="amr" && !form.cartId) return false;
-    if(fleetDef?.id==="agv" && !form.passengerId) return false;
-    if(fleetDef?.id==="arm" && !form.userId) return false;
+    if(fleetDef?.id==="amr"&&!form.cartId) return false;
+    if(fleetDef?.id==="agv"&&!form.passengerId) return false;
+    if(fleetDef?.id==="arm"&&!form.userId) return false;
     return true;
   };
 
+  /* ── 요청 실행 ── */
   const publish = ()=>{
     const ordId = "ORD-"+Date.now().toString().slice(-5);
     const now = new Date();
-    const startMin = now.getHours()*60+now.getMinutes()+5;
     const cartInfo = TOOL_CARTS.find(c=>c.id===form.cartId);
     const order = {
       id:ordId, fleet:fleetDef.id, fleetName:fleetDef.name, fleetColor:fleetDef.color,
       robotId:form.robotId||(fleetDef.robotIds[0]),
       pickNode:form.pickNode, dropNode:form.dropNode,
-      startMin, duration:30, status:"pending",
+      startMin:now.getHours()*60+now.getMinutes()+5,
+      duration:30, status:"pending",
       label:`${fleetDef.name} · ${form.pickNode}→${form.dropNode}`,
       detail: fleetDef.id==="amr"
         ? {cartId:form.cartId, cartCat:cartInfo?.cat}
@@ -4246,189 +4273,123 @@ function OrderTemplateView({ onNavigate }) {
     onNavigate("schedule", {pendingOrder:order});
   };
 
-  /* ── StepBar ── */
-  const STEPS = ["Fleet 선택","오더 입력","확인 및 발행"];
-  const StepBar = ()=>(
-    <div className="flex items-center gap-0 mb-8">
-      {STEPS.map((s,i)=>{
-        const done=i<step-1, cur=i===step-1;
-        return(
-          <React.Fragment key={i}>
-            <div className="flex flex-col items-center gap-1.5">
-              <div className={"w-8 h-8 rounded-full grid place-items-center text-[12px] font-bold transition-all "+(done?"bg-blue-600 text-white":cur?"bg-blue-600 text-white ring-4 ring-blue-100":"bg-slate-200 text-slate-400")}>
-                {done?<Icon name="Check" size={14}/>:i+1}
-              </div>
-              <span className={"text-[11px] font-medium whitespace-nowrap "+(cur?"text-blue-700":done?"text-blue-500":"text-slate-400")}>{s}</span>
-            </div>
-            {i<STEPS.length-1&&<div className={"flex-1 h-0.5 mb-5 mx-1 "+(i<step-1?"bg-blue-400":"bg-slate-200")}/>}
-          </React.Fragment>
-        );
-      })}
-    </div>
-  );
-
-  const SummaryRow = ({label,value})=>(
-    <div className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0">
-      <span className="text-[12px] text-slate-500 w-24 shrink-0">{label}</span>
-      <span className="text-[13px] font-semibold text-slate-900">{value||"—"}</span>
-    </div>
-  );
-  const pickLabel = NODES.find(n=>n.id===form.pickNode)?.label||form.pickNode;
-  const dropLabel = NODES.find(n=>n.id===form.dropNode)?.label||form.dropNode;
-  const cartInfo = TOOL_CARTS.find(c=>c.id===form.cartId);
-
   return (
-    <div className="h-full overflow-auto p-6 bg-slate-50">
-      <div className="max-w-5xl mx-auto">
-        {/* 헤더 */}
-        <div className="mb-6">
-          <div className="flex items-center gap-2 text-[12px] text-slate-400 mb-1">
-            <span>작업 관리</span><Icon name="ChevronRight" size={12}/><span className="text-slate-600 font-medium">오더 템플릿</span>
+    <div className="h-full flex flex-col overflow-hidden bg-slate-50">
+      {/* 헤더 */}
+      <div className="h-14 px-6 border-b border-slate-200 bg-white flex items-center gap-3 shrink-0">
+        <div className="flex items-center gap-2 text-[12px] text-slate-400">
+          <span>작업 관리</span><Icon name="ChevronRight" size={12}/><span className="text-slate-700 font-semibold">작업 요청</span>
+        </div>
+        {fleetDef&&(
+          <div className="flex items-center gap-1.5 ml-2 px-2.5 py-1 rounded-full text-[11.5px] font-semibold" style={{background:fleetDef.color+"15",color:fleetDef.color}}>
+            <Icon name={fleetDef.icon} size={12}/>{fleetDef.name}
           </div>
-          <h1 className="text-[22px] font-bold text-slate-900">오더 발행</h1>
-          <p className="text-[13px] text-slate-500 mt-1">Fleet 선택 후 필요 정보를 입력하면 스케줄러에 자동 등록됩니다.</p>
+        )}
+        <div className="ml-auto flex items-center gap-2">
+          {isValid()&&(
+            <button onClick={publish}
+              className="h-9 px-5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-semibold flex items-center gap-2 shadow-sm transition">
+              <Icon name="Send" size={14}/> 요청 및 스케줄러 이동
+            </button>
+          )}
+        </div>
+      </div>
+
+      <div className="flex-1 min-h-0 flex overflow-hidden">
+        {/* 좌측 패널 */}
+        <div className="w-72 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-y-auto">
+          {/* Fleet 선택 */}
+          <div className="p-4 border-b border-slate-200">
+            <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide mb-2.5">Fleet 선택 *</div>
+            <div className="flex flex-col gap-2">
+              {FLEETS.map(f=>(
+                <button key={f.id} onClick={()=>{setFleet(f.id);setForm({});setMapClick(null);}}
+                  className={"w-full flex items-center gap-2.5 h-10 px-3 rounded-lg border-2 transition "+(fleet===f.id?"text-white":"border-slate-200 bg-white hover:border-slate-300")}
+                  style={fleet===f.id?{background:f.color,borderColor:f.color}:{}}>
+                  <Icon name={f.icon} size={15} style={{color:fleet===f.id?"white":f.color}}/>
+                  <span className={"text-[13px] font-semibold "+(fleet===f.id?"text-white":"text-slate-800")}>{f.name}</span>
+                  {fleet===f.id&&<Icon name="Check" size={13} className="ml-auto text-white"/>}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* 파라미터 폼 */}
+          {fleetDef&&(
+            <div className="p-4 flex flex-col gap-3 flex-1">
+              <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide">위치 선택</div>
+              <NodeSelect field="pickNode" label="Pick 위치" color="#2563eb"/>
+              <NodeSelect field="dropNode" label="Drop 위치" color="#10b981"/>
+
+              <div className="h-px bg-slate-100 my-1"/>
+              <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide">상세 정보</div>
+
+              {fleetDef.id==="amr"&&(
+                <Field label="Tool Cart" required>
+                  <Sel val={form.cartId} onChange={v=>setF("cartId",v)}
+                    opts={TOOL_CARTS.map(c=>({id:c.id,label:`${c.id} · ${c.cat}`}))}
+                    placeholder="Cart 선택"/>
+                </Field>
+              )}
+              {fleetDef.id==="agv"&&(
+                <Field label="승객 ID" required>
+                  <Inp val={form.passengerId} onChange={v=>setF("passengerId",v)} placeholder="사번 또는 ID"/>
+                </Field>
+              )}
+              {fleetDef.id==="arm"&&(
+                <Field label="사용자 ID" required>
+                  <Inp val={form.userId} onChange={v=>setF("userId",v)} placeholder="사번 또는 ID"/>
+                </Field>
+              )}
+
+              <div className="h-px bg-slate-100 my-1"/>
+              <Field label="담당 로봇">
+                <Sel val={form.robotId} onChange={v=>setF("robotId",v)}
+                  opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/>
+              </Field>
+              <Field label="우선순위">
+                <Sel val={form.priority} onChange={v=>setF("priority",v)}
+                  opts={[{id:"normal",label:"일반"},{id:"high",label:"높음"},{id:"urgent",label:"긴급"}]} placeholder="일반"/>
+              </Field>
+              <Field label="메모">
+                <Inp val={form.memo} onChange={v=>setF("memo",v)} placeholder="특이사항 (선택)"/>
+              </Field>
+
+              {/* 요청 버튼 */}
+              <div className="mt-auto pt-3">
+                <button onClick={publish} disabled={!isValid()}
+                  className={"w-full h-10 rounded-xl text-[13px] font-bold flex items-center justify-center gap-2 transition "+(isValid()?"bg-blue-600 hover:bg-blue-700 text-white shadow-sm":"bg-slate-100 text-slate-300 cursor-not-allowed")}>
+                  <Icon name="Send" size={14}/> 요청
+                </button>
+              </div>
+            </div>
+          )}
+
+          {!fleetDef&&(
+            <div className="flex-1 flex items-center justify-center p-6">
+              <div className="text-center">
+                <Icon name="Workflow" size={28} className="mx-auto text-slate-300 mb-3"/>
+                <div className="text-[13px] font-semibold text-slate-500">Fleet를 선택하세요</div>
+                <div className="text-[11.5px] text-slate-400 mt-1">좌측에서 Fleet를 선택하면<br/>파라미터 입력창이 나타납니다</div>
+              </div>
+            </div>
+          )}
         </div>
 
-        <StepBar/>
-
-        {/* Step 1: Fleet 선택 */}
-        {step===1&&(
-          <div className="space-y-3">
-            <div className="text-[13px] font-semibold text-slate-700 mb-4">어느 Fleet으로 발행할까요?</div>
-            {FLEETS.map(f=>(
-              <button key={f.id} onClick={()=>{setFleet(f.id);setForm({});}}
-                className={"w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition "+(fleet===f.id?"border-blue-500 bg-blue-50/60 shadow-sm":"border-slate-200 bg-white hover:border-slate-300")}>
-                <div className="w-12 h-12 rounded-xl grid place-items-center shrink-0" style={{background:f.color+"18"}}>
-                  <Icon name={f.icon} size={22} style={{color:f.color}}/>
-                </div>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-[15px] font-bold text-slate-900">{f.name}</span>
-                    <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{background:f.color+"18",color:f.color}}>{f.robotIds.length}대</span>
-                  </div>
-                  <div className="flex items-center gap-1.5 mt-1.5">
-                    {["Move","Pick","Move","Drop"].map((s,i)=>(
-                      <React.Fragment key={i}>
-                        <span className={"text-[11px] px-2 py-0.5 rounded-md font-medium "+(s==="Pick"||s==="Drop"?"bg-blue-100 text-blue-700":"bg-slate-100 text-slate-500")}>{s}</span>
-                        {i<3&&<Icon name="ArrowRight" size={10} className="text-slate-300"/>}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-                {fleet===f.id&&<div className="w-6 h-6 rounded-full bg-blue-600 grid place-items-center shrink-0"><Icon name="Check" size={13} className="text-white"/></div>}
-              </button>
-            ))}
-            <div className="flex justify-end pt-2">
-              <button onClick={()=>setStep(2)} disabled={!fleet}
-                className={"h-10 px-6 rounded-xl text-[13px] font-semibold flex items-center gap-2 transition "+(fleet?"bg-blue-600 hover:bg-blue-700 text-white shadow-sm":"bg-slate-100 text-slate-300 cursor-not-allowed")}>
-                다음 <Icon name="ArrowRight" size={14}/>
-              </button>
+        {/* 우측 맵 */}
+        <div className="flex-1 min-w-0 p-5 flex flex-col">
+          <div className="flex items-center justify-between mb-3">
+            <div className="text-[12px] font-semibold text-slate-600 flex items-center gap-1.5">
+              <Icon name="Map" size={14} className="text-slate-500"/>
+              위치 선택 — 맵에서 직접 노드를 클릭하거나 좌측 드롭다운을 사용하세요
+            </div>
+            <div className="flex items-center gap-2 text-[11px] text-slate-500">
+              <div className="w-2.5 h-2.5 rounded-sm bg-blue-600"/>Pick
+              <div className="w-2.5 h-2.5 rounded-sm bg-emerald-500"/>Drop
             </div>
           </div>
-        )}
-
-        {/* Step 2: 입력 폼 + 맵 */}
-        {step===2&&(
-          <div className="flex gap-6 items-start">
-            {/* 좌: 폼 */}
-            <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-3 p-4 rounded-xl mb-5" style={{background:fleetDef?.color+"12",border:`1.5px solid ${fleetDef?.color}30`}}>
-                <div className="w-9 h-9 rounded-lg grid place-items-center" style={{background:fleetDef?.color+"20"}}>
-                  <Icon name={fleetDef?.icon} size={18} style={{color:fleetDef?.color}}/>
-                </div>
-                <div>
-                  <div className="text-[14px] font-bold" style={{color:fleetDef?.color}}>{fleetDef?.name}</div>
-                  <div className="flex items-center gap-1 mt-0.5">
-                    {["Move","Pick","Move","Drop"].map((s,i)=>(
-                      <React.Fragment key={i}>
-                        <span className="text-[10.5px] text-slate-500 font-medium">{s}</span>
-                        {i<3&&<Icon name="ArrowRight" size={9} className="text-slate-300"/>}
-                      </React.Fragment>
-                    ))}
-                  </div>
-                </div>
-              </div>
-              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
-                {renderForm()}
-              </div>
-              <div className="flex justify-between pt-4">
-                <button onClick={()=>setStep(1)} className="h-10 px-5 rounded-xl text-[13px] font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 flex items-center gap-2">
-                  <Icon name="ArrowLeft" size={14}/> 이전
-                </button>
-                <button onClick={()=>setStep(3)} disabled={!isValid()}
-                  className={"h-10 px-6 rounded-xl text-[13px] font-semibold flex items-center gap-2 transition "+(isValid()?"bg-blue-600 hover:bg-blue-700 text-white shadow-sm":"bg-slate-100 text-slate-300 cursor-not-allowed")}>
-                  다음 <Icon name="ArrowRight" size={14}/>
-                </button>
-              </div>
-            </div>
-            {/* 우: 맵 */}
-            <div className="shrink-0 w-[380px]">
-              <MiniMap/>
-              <div className="mt-3 rounded-xl border border-slate-200 bg-white p-3.5">
-                <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide mb-2">범례</div>
-                <div className="flex flex-col gap-1.5">
-                  <div className="flex items-center gap-2 text-[11.5px]">
-                    <div className="w-4 h-4 rounded-full bg-blue-600 grid place-items-center shrink-0"><div className="w-1.5 h-1.5 rounded-full bg-white"/></div>
-                    <span className="text-slate-700">Pick 위치</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11.5px]">
-                    <div className="w-4 h-4 rounded-full bg-emerald-500 grid place-items-center shrink-0"><div className="w-1.5 h-1.5 rounded-full bg-white"/></div>
-                    <span className="text-slate-700">Drop 위치</span>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11.5px]">
-                    <div className="w-4 h-0.5 bg-indigo-400" style={{backgroundImage:"repeating-linear-gradient(90deg,#6366f1 0,#6366f1 6px,transparent 6px,transparent 9px)"}}/>
-                    <span className="text-slate-700">경로 (예상)</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Step 3: 확인 및 발행 */}
-        {step===3&&(
-          <div className="flex gap-6 items-start">
-            <div className="flex-1 min-w-0">
-              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-4">
-                <div className="flex items-center gap-2 mb-4">
-                  <div className="w-7 h-7 rounded-lg grid place-items-center shrink-0" style={{background:fleetDef?.color+"18"}}>
-                    <Icon name={fleetDef?.icon} size={15} style={{color:fleetDef?.color}}/>
-                  </div>
-                  <span className="text-[14px] font-bold text-slate-900">오더 요약</span>
-                  <span className="ml-auto text-[11px] px-2.5 py-1 rounded-full font-semibold" style={{background:fleetDef?.color+"18",color:fleetDef?.color}}>{fleetDef?.name}</span>
-                </div>
-                <SummaryRow label="시퀀스" value="Move → Pick → Move → Drop"/>
-                <SummaryRow label="Pick 위치" value={pickLabel}/>
-                <SummaryRow label="Drop 위치" value={dropLabel}/>
-                {fleetDef?.id==="amr"&&<SummaryRow label="Tool Cart" value={form.cartId ? `${form.cartId}  (${cartInfo?.cat})` : "—"}/>}
-                {fleetDef?.id==="agv"&&<SummaryRow label="승객 ID" value={form.passengerId}/>}
-                {fleetDef?.id==="arm"&&<SummaryRow label="사용자 ID" value={form.userId}/>}
-                <SummaryRow label="담당 로봇" value={form.robotId||(fleetDef?.robotIds[0]+" (자동배정)")}/>
-                <SummaryRow label="우선순위" value={{normal:"일반",high:"높음",urgent:"긴급"}[form.priority||"normal"]}/>
-                {form.memo&&<SummaryRow label="메모" value={form.memo}/>}
-              </div>
-              <div className="flex items-center gap-3 p-4 rounded-xl bg-blue-50 border border-blue-200 mb-5">
-                <Icon name="CalendarRange" size={18} className="text-blue-600 shrink-0"/>
-                <div>
-                  <div className="text-[13px] font-semibold text-blue-900">스케줄러 자동 연동</div>
-                  <div className="text-[12px] text-blue-600 mt-0.5">발행 즉시 스케줄링 화면으로 이동하며 Pending 상태로 등록됩니다.</div>
-                </div>
-              </div>
-              <div className="flex justify-between">
-                <button onClick={()=>setStep(2)} className="h-10 px-5 rounded-xl text-[13px] font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 flex items-center gap-2">
-                  <Icon name="ArrowLeft" size={14}/> 이전
-                </button>
-                <button onClick={publish}
-                  className="h-10 px-6 rounded-xl text-[13px] font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 transition">
-                  <Icon name="Send" size={14}/> 발행 및 스케줄러로 이동
-                </button>
-              </div>
-            </div>
-            <div className="shrink-0 w-[380px]">
-              <MiniMap/>
-            </div>
-          </div>
-        )}
+          <MapArea/>
+        </div>
       </div>
     </div>
   );
