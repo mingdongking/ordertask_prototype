@@ -4447,7 +4447,7 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
   const [filterTemplate,setFilterTemplate]=useState(null);
   const [reqFleetF,setReqFleetF]=useState("all");
   const [reqTplF,setReqTplF]=useState("all");
-  const [now,setNow]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});});
+  const [now,setNow]=useState(()=>{const d=new Date();return d.getHours()*60+d.getMinutes();});
   const [hlRcp,setHlRcp]=useState(initialFocusRecipeId||null);
   const [addOpen,setAddOpen]=useState(false);
   const [fleetF,setFleetF]=useState(new Set());
