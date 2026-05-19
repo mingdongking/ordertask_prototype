@@ -4685,54 +4685,83 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted }) {
       {selOrder && (
         <div className="fixed inset-0 z-40 flex items-end justify-end p-4 pointer-events-none">
           <div className="w-96 bg-white rounded-xl shadow-2xl border border-slate-200 pointer-events-auto overflow-hidden">
-            <div className="px-5 pt-4 pb-3 border-b border-slate-200">
-              <div className="flex items-center gap-2">
-                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-semibold" style={{background:SC[selOrder.status].chip+"20",color:SC[selOrder.status].chip}}>{SC[selOrder.status].label}</span>
-                <span className="text-[10.5px] text-slate-400 tnum">{selOrder.id}</span>
-                <button onClick={()=>setSelOrder(null)} className="ml-auto w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500"><Icon name="X" size={14}/></button>
-              </div>
-              <h3 className="text-[16px] font-semibold text-slate-900 mt-1.5">{selOrder.recipe.name}</h3>
-              <div className="text-[11.5px] text-slate-500 mt-0.5 flex items-center gap-3">
-                <span className="flex items-center gap-1"><Icon name="Bot" size={11}/> {selOrder.robotId}</span>
-                <span className="flex items-center gap-1"><Icon name="Clock" size={11}/> {fmtTime(selOrder.start)}—{fmtTime(selOrder.start+recipeDuration(selOrder.recipe))}</span>
-              </div>
-            </div>
-            <div className="px-5 py-3 border-b border-slate-200">
-              <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-2">단계 진행</div>
-              <div className="space-y-1.5">
-                {selOrder.recipe.steps.map((st,i)=>{const a=actMeta(st.actionType),isDone=selOrder.status==="done"||(selOrder.status==="running"&&i<Math.floor(selOrder.recipe.steps.length*0.6)),isCurr=selOrder.status==="running"&&i===Math.floor(selOrder.recipe.steps.length*0.6);return(
-                  <div key={i} className="flex items-center gap-2.5">
-                    <div className={"w-5 h-5 rounded-full grid place-items-center shrink-0 "+(isDone?"bg-emerald-500 text-white":isCurr?"bg-blue-500 text-white":"bg-slate-100 text-slate-400")}>{isDone?<Icon name="Check" size={10}/>:isCurr?<Icon name={a.icon} size={10}/>:<span className="text-[9px] font-semibold">{i+1}</span>}</div>
-                    <div className="flex items-center gap-1.5 flex-1 min-w-0"><Icon name={a.icon} size={11} style={{color:a.color}}/><span className="text-[12px] text-slate-800">{a.label}</span><span className="text-[10.5px] text-slate-400">@ {st.nodeId}</span></div>
-                    <span className="text-[10.5px] text-slate-500 tnum">{st.duration}m</span>
+            {(()=>{
+              const sc = SC[selOrder.status]||SC["queued"];
+              const isPending = selOrder.status==="pending";
+              return (<>
+                <div className="px-5 pt-4 pb-3 border-b border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[10.5px] font-semibold" style={{background:sc.chip+"20",color:sc.chip}}>{sc.label}</span>
+                    <span className="text-[10.5px] text-slate-400 tnum">{selOrder.id}</span>
+                    <button onClick={()=>setSelOrder(null)} className="ml-auto w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-500"><Icon name="X" size={14}/></button>
                   </div>
-                );})}
-              </div>
-            </div>
-            {/* 작업 정보 */}
-            <div className="px-5 py-3 border-b border-slate-200 grid grid-cols-3 gap-3">
-              {[
-                ["Fleet", fleetMeta(recipes.find(r=>r.id===selOrder.recipeId)?.fleet||"amr").name],
-                ["우선순위", "P2 · 표준"],
-                ["작업자 ID", "samsung.kim"],
-              ].map(([label,value])=>(
-                <div key={label}>
-                  <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
-                  <div className={"text-[12px] font-medium text-slate-900 truncate "+(label==="작업자 ID"?"font-mono text-blue-700":"")}>{value}</div>
+                  <h3 className="text-[16px] font-semibold text-slate-900 mt-1.5">
+                    {isPending ? (selOrder.label||selOrder.id) : selOrder.recipe?.name||selOrder.id}
+                  </h3>
+                  <div className="text-[11.5px] text-slate-500 mt-0.5 flex items-center gap-3">
+                    <span className="flex items-center gap-1"><Icon name="Bot" size={11}/> {selOrder.robotId}</span>
+                    <span className="flex items-center gap-1"><Icon name="Clock" size={11}/> {fmtTime(selOrder.start)}—{fmtTime(selOrder.start+getOrderDur(selOrder))}</span>
+                  </div>
                 </div>
-              ))}
-            </div>
-            <div className="px-5 py-3 flex items-center gap-2">
-              {isEditable(selOrder)?<>
-                <button onClick={()=>copyOrder(selOrder)} className="flex-1 h-9 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700 flex items-center justify-center gap-1.5"><Icon name="Copy" size={13}/> 복사</button>
-                <button onClick={()=>deleteOrder(selOrder)} className="h-9 px-3 rounded-md border border-rose-200 bg-white hover:bg-rose-50 text-[12.5px] font-medium text-rose-600 flex items-center justify-center gap-1.5"><Icon name="Trash2" size={13}/></button>
-              </>:<div className="flex-1 h-9 rounded-md bg-slate-50 border border-slate-200 text-[11.5px] text-slate-500 flex items-center justify-center gap-1.5"><Icon name="Lock" size={12}/>
-                {selOrder.status==="done"&&"완료된 작업은 수정할 수 없습니다"}
-                {selOrder.status==="running"&&"진행 중인 작업은 수정할 수 없습니다"}
-                {selOrder.status==="error"&&"실패 - 시스템 검토 필요"}
-                {selOrder.status==="queued"&&"현재 시점 이후 작업만 수정 가능"}
-              </div>}
-            </div>
+                {/* Pending 오더 상세 */}
+                {isPending && (
+                  <div className="px-5 py-4 border-b border-slate-200 space-y-2.5">
+                    <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wider mb-2">오더 정보</div>
+                    {[
+                      ["Pick 위치", selOrder.pickNode],
+                      ["Drop 위치", selOrder.dropNode],
+                      ...(selOrder.detail?.cartId ? [["Tool Cart", selOrder.detail.cartId]] : []),
+                      ...(selOrder.detail?.passengerName ? [["승객", `${selOrder.detail.passengerName} (${selOrder.detail.passengerId})`]] : []),
+                      ...(selOrder.detail?.partsCat ? [["부품", `${selOrder.detail.partsCat} · ${selOrder.detail.line} · ${selOrder.detail.qty}개`]] : []),
+                    ].map(([k,v])=>(
+                      <div key={k} className="flex items-center gap-3">
+                        <span className="text-[11.5px] text-slate-500 w-20 shrink-0">{k}</span>
+                        <span className="text-[12.5px] font-semibold text-slate-900">{v||"—"}</span>
+                      </div>
+                    ))}
+                  </div>
+                )}
+                {/* 기존 레시피 오더 단계 */}
+                {!isPending && selOrder.recipe && (
+                  <div className="px-5 py-3 border-b border-slate-200">
+                    <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-2">단계 진행</div>
+                    <div className="space-y-1.5">
+                      {selOrder.recipe.steps.map((st,i)=>{const a=actMeta(st.actionType),isDone=selOrder.status==="done"||(selOrder.status==="running"&&i<Math.floor(selOrder.recipe.steps.length*0.6)),isCurr=selOrder.status==="running"&&i===Math.floor(selOrder.recipe.steps.length*0.6);return(
+                        <div key={i} className="flex items-center gap-2.5">
+                          <div className={"w-5 h-5 rounded-full grid place-items-center shrink-0 "+(isDone?"bg-emerald-500 text-white":isCurr?"bg-blue-500 text-white":"bg-slate-100 text-slate-400")}>{isDone?<Icon name="Check" size={10}/>:isCurr?<Icon name={a.icon} size={10}/>:<span className="text-[9px] font-semibold">{i+1}</span>}</div>
+                          <div className="flex items-center gap-1.5 flex-1 min-w-0"><Icon name={a.icon} size={11} style={{color:a.color}}/><span className="text-[12px] text-slate-800">{a.label}</span><span className="text-[10.5px] text-slate-400">@ {st.nodeId}</span></div>
+                          <span className="text-[10.5px] text-slate-500 tnum">{st.duration}m</span>
+                        </div>
+                      );})}
+                    </div>
+                  </div>
+                )}
+                <div className="px-5 py-3 border-b border-slate-200 grid grid-cols-3 gap-3">
+                  {[
+                    ["Fleet", selOrder.fleetName||fleetMeta(recipes.find(r=>r.id===selOrder.recipeId)?.fleet||"amr").name],
+                    ["우선순위", selOrder.priority==="urgent"?"긴급":selOrder.priority==="high"?"높음":"표준"],
+                    ["작업자 ID", "samsung.kim"],
+                  ].map(([label,value])=>(
+                    <div key={label}>
+                      <div className="text-[10px] text-slate-400 uppercase tracking-wider mb-0.5">{label}</div>
+                      <div className={"text-[12px] font-medium text-slate-900 truncate "+(label==="작업자 ID"?"font-mono text-blue-700":"")}>{value}</div>
+                    </div>
+                  ))}
+                </div>
+                <div className="px-5 py-3 flex items-center gap-2">
+                  {isEditable(selOrder)?<>
+                    <button onClick={()=>copyOrder(selOrder)} className="flex-1 h-9 rounded-md border border-slate-200 bg-white hover:bg-slate-50 text-[12.5px] font-medium text-slate-700 flex items-center justify-center gap-1.5"><Icon name="Copy" size={13}/> 복사</button>
+                    <button onClick={()=>deleteOrder(selOrder)} className="h-9 px-3 rounded-md border border-rose-200 bg-white hover:bg-rose-50 text-[12.5px] font-medium text-rose-600 flex items-center justify-center gap-1.5"><Icon name="Trash2" size={13}/></button>
+                  </>:<div className="flex-1 h-9 rounded-md bg-slate-50 border border-slate-200 text-[11.5px] text-slate-500 flex items-center justify-center gap-1.5"><Icon name="Lock" size={12}/>
+                    {selOrder.status==="done"&&"완료된 작업은 수정할 수 없습니다"}
+                    {selOrder.status==="running"&&"진행 중인 작업은 수정할 수 없습니다"}
+                    {selOrder.status==="error"&&"실패 - 시스템 검토 필요"}
+                    {selOrder.status==="queued"&&"현재 시점 이후 작업만 수정 가능"}
+                    {selOrder.status==="pending"&&"담당자 배정 후 확정 필요"}
+                  </div>}
+                </div>
+              </>);
+            })()}
           </div>
         </div>
       )}
