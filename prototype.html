@@ -173,6 +173,7 @@ const CSS = `
   @keyframes pulseRing{0%{transform:scale(.9);opacity:.6}80%{transform:scale(2);opacity:0}100%{transform:scale(2);opacity:0}}
   .pulse-ring{animation:pulseRing 1.8s ease-out infinite;transform-origin:center}
   @keyframes shimmer{0%{background-position:0% 50%}100%{background-position:200% 50%}}
+  @keyframes fadeSlideDown{0%{opacity:0;transform:translateX(-50%) translateY(-12px)}100%{opacity:1;transform:translateX(-50%) translateY(0)}}
   .shimmer-bar{background:linear-gradient(90deg,rgba(37,99,235,0),rgba(37,99,235,.35),rgba(37,99,235,0));background-size:200% 100%;animation:shimmer 1.6s linear infinite}
   .tnum{font-variant-numeric:tabular-nums}
   .grid-bg{background-image:linear-gradient(to right,#e2e8f0 1px,transparent 1px),linear-gradient(to bottom,#e2e8f0 1px,transparent 1px);background-size:40px 40px}
@@ -319,7 +320,8 @@ const NAV = [
   { id:"home",        label:"모니터링 홈",   icon:"LayoutDashboard" },
   { id:"work",        label:"작업 관리",     icon:"Workflow",
     children:[
-      { id:"schedule", label:"작업 스케줄링", icon:"CalendarRange" },
+      { id:"order-template", label:"오더 템플릿",   icon:"ClipboardList" },
+      { id:"schedule",       label:"작업 스케줄링", icon:"CalendarRange" },
     ]
   },
   { id:"analytics",  label:"통계/분석",     icon:"BarChart3",
@@ -687,9 +689,27 @@ function MonitoringHome({ onNavigate }) {
   const [cmdTab, setCmdTab] = useState("command");
   const [panelOpen, setPanelOpen] = useState(false);
   const [selectedNodeId, setSelectedNodeId] = useState(null);
+  const [selectedEdgeId, setSelectedEdgeId] = useState(null);
   const [moveTarget, setMoveTarget] = useState("");
   const [layerOpen, setLayerOpen] = useState(false);
   const [layers, setLayers] = useState(new Set(["robot","node","edge","zone"]));
+  // 편집 중인 다른 사용자 (프로토타입: 시뮬레이션)
+  const [editingUser] = useState("samsung.kim");
+  const editToastRef = useRef(null);
+  // 노드 속성 (nodeId → props) — live edit 용
+  const initNodeProps = Object.fromEntries(mapNodes.map(n=>([n.id,{type:"none",avoidance:false,mutualExcl:false,theta:0}])));
+  const [nodeProps,          setNodeProps]          = useState(initNodeProps);
+  const [committedNodeProps, setCommittedNodeProps] = useState(initNodeProps);
+  function setNodeProp(id, key, val){ setNodeProps(p=>({...p,[id]:{...p[id],[key]:val}})); }
+  function saveNodeProps(id){   setCommittedNodeProps(p=>({...p,[id]:{...nodeProps[id]}})); }
+  function cancelNodeProps(id){ setNodeProps(p=>({...p,[id]:{...committedNodeProps[id]}})); }
+  // 엣지 속성 (edgeId → props) — live edit 용
+  const initEdgeProps = Object.fromEntries(mapEdges.map(e=>([e.id,{speed:1.0,rotation:false,inactive:false,mutualExcl:false,laneCut:false}])));
+  const [edgeProps,          setEdgeProps]          = useState(initEdgeProps);
+  const [committedEdgeProps, setCommittedEdgeProps] = useState(initEdgeProps);
+  function setEdgeProp(id, key, val){ setEdgeProps(p=>({...p,[id]:{...p[id],[key]:val}})); }
+  function saveEdgeProps(id){   setCommittedEdgeProps(p=>({...p,[id]:{...edgeProps[id]}})); }
+  function cancelEdgeProps(id){ setEdgeProps(p=>({...p,[id]:{...committedEdgeProps[id]}})); }
   const [mapFullscreen, setMapFullscreen] = useState(false);
   const [editMode, setEditMode] = useState(false);
   const [editTab, setEditTab] = useState("zone");
@@ -699,13 +719,40 @@ function MonitoringHome({ onNavigate }) {
     {id:"EZ-03", name:"Zone C · 충전",  color:"#64748b", x:80,  y:300, w:190, h:75},
     {id:"EZ-04", name:"Zone D · 조립",  color:"#7c3aed", x:310, y:300, w:220, h:88},
   ]);
+  const [savedZones, setSavedZones] = useState(null);
   const [selectedZoneId, setSelectedZoneId] = useState(null);
   const [editingZoneId, setEditingZoneId] = useState(null);
   const [newZoneName, setNewZoneName] = useState("");
-  const [dragState, setDragState] = useState(null); // {zoneId, startX, startY, zoneX, zoneY}
+  const [newZoneColor, setNewZoneColor] = useState("#2563eb");
+  const [addZoneOpen, setAddZoneOpen] = useState(false);
+  const [dragState, setDragState] = useState(null);
+  const [editHighlightNodeId, setEditHighlightNodeId] = useState(null);
+  const [editHighlightEdgeId, setEditHighlightEdgeId] = useState(null);
   const mapCanvasRef = useRef(null);
 
-  function exitEdit(){ setMapFullscreen(false); setEditMode(false); setSelectedZoneId(null); }
+  function enterEdit(){
+    setSavedZones(editZones);
+    setMapFullscreen(true);
+    setEditMode(true);
+  }
+  function saveEdit(){
+    setSavedZones(null);
+    setCommittedNodeProps(nodeProps);
+    setCommittedEdgeProps(edgeProps);
+    setMapFullscreen(false);
+    setEditMode(false);
+    setSelectedZoneId(null);
+  }
+  function cancelEdit(){
+    if(savedZones) setEditZones(savedZones);
+    setNodeProps(committedNodeProps);
+    setEdgeProps(committedEdgeProps);
+    setSavedZones(null);
+    setMapFullscreen(false);
+    setEditMode(false);
+    setSelectedZoneId(null);
+  }
+  function exitEdit(){ cancelEdit(); }
 
   function handleZoneMouseDown(e, zoneId) {
     if(!editMode) return;
@@ -815,7 +862,7 @@ function MonitoringHome({ onNavigate }) {
         </div>
       </div>
       {/* Map full width */}
-      {mapFullscreen&&<div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>{setMapFullscreen(false);setEditMode(false);}}/>}
+      {mapFullscreen&&!editMode&&<div className="fixed inset-0 z-50 bg-black/30 backdrop-blur-sm" onClick={()=>{setMapFullscreen(false);setEditMode(false);}}/>}
       <div className={mapFullscreen
         ? "fixed inset-4 z-50 rounded-xl shadow-2xl overflow-hidden bg-white flex"+(editMode?" flex-row":" flex-col")
         : "bg-white border border-slate-200 rounded-lg shadow-sm overflow-hidden"}>
@@ -823,10 +870,27 @@ function MonitoringHome({ onNavigate }) {
         {/* 편집 모드 좌측 패널 (flex 형제) */}
         {mapFullscreen&&editMode&&(
           <div className="w-60 shrink-0 bg-white border-r border-slate-200 flex flex-col overflow-hidden z-10" onClick={e=>e.stopPropagation()}>
-            <div className="h-12 px-4 border-b border-slate-200 flex items-center gap-2 shrink-0">
-              <div className="w-6 h-6 rounded bg-blue-50 grid place-items-center"><Icon name="Pencil" size={13} className="text-blue-600"/></div>
-              <span className="text-[13px] font-semibold text-slate-900">맵 편집</span>
-              <button onClick={exitEdit} className="ml-auto w-7 h-7 grid place-items-center rounded hover:bg-slate-100 text-slate-400"><Icon name="X" size={13}/></button>
+            <div className="h-12 px-3 border-b border-slate-200 flex items-center gap-2 shrink-0">
+              <div className="w-6 h-6 rounded bg-blue-50 grid place-items-center shrink-0"><Icon name="Pencil" size={13} className="text-blue-600"/></div>
+              <span className="text-[13px] font-semibold text-slate-900 shrink-0">맵 편집</span>
+              <div className="ml-auto flex items-center gap-1.5">
+                {(()=>{
+                  const zonesChanged = JSON.stringify(editZones) !== JSON.stringify(savedZones);
+                  const nodesChanged = JSON.stringify(nodeProps) !== JSON.stringify(committedNodeProps);
+                  const edgesChanged = JSON.stringify(edgeProps) !== JSON.stringify(committedEdgeProps);
+                  const isDirty = zonesChanged || nodesChanged || edgesChanged;
+                  return (<>
+                    <button onClick={cancelEdit}
+                      className="h-7 px-2 rounded text-[11px] text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200">
+                      <Icon name="X" size={10}/> 취소
+                    </button>
+                    <button onClick={saveEdit} disabled={!isDirty}
+                      className={"h-7 px-2 rounded text-[11px] flex items-center gap-1 transition "+(isDirty?"text-white bg-blue-600 hover:bg-blue-700":"text-slate-300 bg-slate-100 cursor-not-allowed")}>
+                      <Icon name="Save" size={10}/> 저장
+                    </button>
+                  </>);
+                })()}
+              </div>
             </div>
             <div className="flex border-b border-slate-200 px-2 pt-2 gap-1 shrink-0">
               {[{id:"zone",label:"Zone",icon:"LayoutGrid"},{id:"node",label:"노드",icon:"MapPin"},{id:"edge",label:"엣지",icon:"GitBranch"}].map(t=>(
@@ -838,17 +902,66 @@ function MonitoringHome({ onNavigate }) {
             </div>
             {editTab==="zone"&&(
               <div className="flex-1 overflow-y-auto p-3 space-y-3">
-                <button onClick={()=>{
-                  const id="EZ-"+(editZones.length+1).toString().padStart(2,"0");
-                  setEditZones(p=>[...p,{id,name:"새 Zone",color:"#94a3b8",x:120,y:100,w:160,h:100}]);
-                  setSelectedZoneId(id); setEditingZoneId(id); setNewZoneName("새 Zone");
-                }} className="w-full h-9 rounded-lg border-2 border-dashed border-blue-300 bg-blue-50/50 hover:bg-blue-50 text-[12.5px] font-medium text-blue-600 flex items-center justify-center gap-1.5 transition">
-                  <Icon name="Plus" size={13}/> Zone 추가
-                </button>
+                {/* Zone 추가 — 토글 */}
+                {(()=>{
+                  const PALETTE = [
+                    "#2563eb","#10b981","#7c3aed","#f59e0b","#e11d48",
+                    "#0891b2","#65a30d","#dc2626","#9333ea","#64748b",
+                  ];
+                  return (
+                    <div className="rounded-lg border border-slate-200 overflow-hidden">
+                      {/* 헤더 버튼 */}
+                      <button onClick={()=>setAddZoneOpen(o=>!o)}
+                        className={"w-full h-9 px-3 flex items-center gap-2 text-[12.5px] font-medium transition "+(addZoneOpen?"bg-blue-50 text-blue-700 border-b border-blue-200":"bg-white text-blue-600 hover:bg-blue-50/60")}>
+                        <div className={"w-5 h-5 rounded grid place-items-center transition "+(addZoneOpen?"bg-blue-600":"bg-blue-100")}>
+                          <Icon name={addZoneOpen?"Minus":"Plus"} size={11} className={addZoneOpen?"text-white":"text-blue-600"}/>
+                        </div>
+                        Zone 추가
+                        <Icon name="ChevronDown" size={12} className={"ml-auto text-slate-400 transition-transform "+(addZoneOpen?"rotate-180":"")}/>
+                      </button>
+                      {/* 펼쳐지는 폼 */}
+                      {addZoneOpen&&(
+                        <div className="p-3 space-y-2.5 bg-blue-50/30">
+                          <input value={newZoneName} onChange={e=>setNewZoneName(e.target.value)}
+                            placeholder="Zone 이름 입력"
+                            className="w-full h-8 px-2.5 rounded-md border border-blue-200 text-[12px] text-slate-900 bg-white outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100"/>
+                          <div>
+                            <div className="text-[10px] text-blue-600 mb-1.5">색상 선택</div>
+                            <div className="flex flex-wrap gap-1.5">
+                              {PALETTE.map(col=>(
+                                <button key={col} onClick={()=>setNewZoneColor(col)}
+                                  className={"w-6 h-6 rounded-md transition "+(newZoneColor===col?"ring-2 ring-offset-1 ring-blue-500 scale-110":"")}
+                                  style={{background:col}}/>
+                              ))}
+                              <label className="w-6 h-6 rounded-md border border-slate-300 grid place-items-center cursor-pointer overflow-hidden relative" title="직접 입력">
+                                <Icon name="Pipette" size={11} className="text-slate-500"/>
+                                <input type="color" value={newZoneColor} onChange={e=>setNewZoneColor(e.target.value)}
+                                  className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"/>
+                              </label>
+                            </div>
+                            <div className="mt-1.5 flex items-center gap-2">
+                              <div className="w-5 h-5 rounded shrink-0" style={{background:newZoneColor}}/>
+                              <span className="text-[10.5px] font-mono text-slate-500">{newZoneColor}</span>
+                            </div>
+                          </div>
+                          <button onClick={()=>{
+                            if(!newZoneName.trim()) return;
+                            const id="EZ-"+(editZones.length+1).toString().padStart(2,"0");
+                            setEditZones(p=>[...p,{id,name:newZoneName.trim(),color:newZoneColor,x:120,y:100,w:160,h:100}]);
+                            setSelectedZoneId(id);
+                            setNewZoneName("");
+                            setAddZoneOpen(false);
+                          }} className={"w-full h-8 rounded-md text-[12px] font-medium flex items-center justify-center gap-1.5 transition "+(newZoneName.trim()?"text-white bg-blue-600 hover:bg-blue-700":"text-slate-400 bg-slate-100 cursor-not-allowed")}>
+                            <Icon name="Plus" size={12}/> 추가
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })()}
                 <div className="space-y-2">
                   {editZones.map(z=>{
                     const isSel=selectedZoneId===z.id;
-                    // 이 Zone 안에 속한 노드/엣지
                     const zNodes = mapNodes.filter(n=> n.x>=z.x && n.x<=z.x+z.w && n.y>=z.y && n.y<=z.y+z.h);
                     const zEdges = mapEdges.filter(e=>{
                       const fn=mapNodes.find(n=>n.id===e.from), tn=mapNodes.find(n=>n.id===e.to);
@@ -862,10 +975,24 @@ function MonitoringHome({ onNavigate }) {
                             <div className="space-y-2" onClick={e=>e.stopPropagation()}>
                               <input autoFocus value={newZoneName} onChange={e=>setNewZoneName(e.target.value)}
                                 className="w-full h-8 px-2 rounded-md border border-blue-400 text-[12.5px] text-slate-900 outline-none ring-2 ring-blue-100"/>
+                              {/* 편집 시 색상 팔레트 */}
+                              <div className="flex flex-wrap gap-1">
+                                {["#2563eb","#10b981","#7c3aed","#f59e0b","#e11d48","#0891b2","#65a30d","#dc2626","#9333ea","#64748b"].map(col=>(
+                                  <button key={col} onClick={()=>setEditZones(p=>p.map(x=>x.id===z.id?{...x,color:col}:x))}
+                                    className={"w-5 h-5 rounded transition "+(z.color===col?"ring-2 ring-offset-1 ring-blue-500 scale-110":"")}
+                                    style={{background:col}}/>
+                                ))}
+                                <label className="w-5 h-5 rounded border border-slate-300 grid place-items-center cursor-pointer overflow-hidden relative">
+                                  <Icon name="Pipette" size={9} className="text-slate-500"/>
+                                  <input type="color" value={z.color}
+                                    onChange={e=>setEditZones(p=>p.map(x=>x.id===z.id?{...x,color:e.target.value}:x))}
+                                    className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"/>
+                                </label>
+                              </div>
                               <div className="flex gap-1.5">
+                                <button onClick={()=>setEditingZoneId(null)} className="h-7 px-2 rounded border border-slate-200 bg-white text-[11.5px] text-slate-600">취소</button>
                                 <button onClick={()=>{setEditZones(p=>p.map(x=>x.id===z.id?{...x,name:newZoneName}:x));setEditingZoneId(null);}}
                                   className="flex-1 h-7 rounded bg-blue-600 hover:bg-blue-700 text-white text-[11.5px] font-medium">저장</button>
-                                <button onClick={()=>setEditingZoneId(null)} className="h-7 px-2 rounded border border-slate-200 bg-white text-[11.5px] text-slate-600">취소</button>
                               </div>
                             </div>
                           ):(
@@ -910,17 +1037,75 @@ function MonitoringHome({ onNavigate }) {
                 </div>
               </div>
             )}
-            {(editTab==="node"||editTab==="edge")&&(
-              <div className="flex-1 flex items-center justify-center">
-                <div className="text-center">
-                  <div className="w-12 h-12 mx-auto rounded-xl bg-slate-50 border border-slate-200 grid place-items-center mb-3">
-                    <Icon name={editTab==="node"?"MapPin":"GitBranch"} size={20} className="text-slate-300"/>
-                  </div>
-                  <div className="text-[13px] font-semibold text-slate-500">{editTab==="node"?"노드":"엣지"} 편집</div>
-                  <div className="text-[11.5px] text-slate-400 mt-1">추후 추가 예정</div>
+            {editTab==="node"&&(
+              <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+                <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide px-1 mb-2">
+                  노드 목록 ({mapNodes.length})
                 </div>
+                {mapNodes.map(node=>{
+                  const isSel = editHighlightNodeId===node.id;
+                  const np = nodeProps[node.id]||{};
+                  const typeColor = {pickdrop:"text-emerald-600 bg-emerald-50",charge:"text-amber-600 bg-amber-50",storage:"text-purple-600 bg-purple-50",none:"text-slate-400 bg-slate-50"}[np.type||"none"];
+                  const typeLabel = {pickdrop:"P/D",charge:"충전",storage:"STG",none:"—"}[np.type||"none"];
+                  return(
+                    <button key={node.id}
+                      onClick={()=>setEditHighlightNodeId(isSel?null:node.id)}
+                      onDoubleClick={()=>{
+                        setSelectedNodeId(node.id);
+                        setSelectedEdgeId(null);
+                        setPanelOpen(true);
+                        setCmdTab("props");
+                      }}
+                      className={"w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition "+(isSel?"border-blue-400 bg-blue-50/70 shadow-sm":"border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50")}>
+                      <div className={"w-5 h-5 rounded grid place-items-center shrink-0 "+(isSel?"bg-blue-600":"bg-slate-100")}>
+                        <Icon name="MapPin" size={11} className={isSel?"text-white":"text-slate-400"}/>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={"text-[12px] font-semibold truncate "+(isSel?"text-blue-700":"text-slate-800")}>{node.label}</div>
+                        <div className="text-[10px] text-slate-400 tnum">{node.id}</div>
+                      </div>
+                      <span className={"text-[9.5px] font-semibold px-1.5 py-0.5 rounded "+typeColor}>{typeLabel}</span>
+                    </button>
+                  );
+                })}
               </div>
             )}
+            {editTab==="edge"&&(
+              <div className="flex-1 overflow-y-auto p-3 space-y-1.5">
+                <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide px-1 mb-2">
+                  엣지 목록 ({mapEdges.length})
+                </div>
+                {mapEdges.map(edge=>{
+                  const isSel = editHighlightEdgeId===edge.id;
+                  const ep = edgeProps[edge.id]||{};
+                  const fromN = mapNodes.find(n=>n.id===edge.from);
+                  const toN   = mapNodes.find(n=>n.id===edge.to);
+                  const dist  = fromN&&toN ? Math.round(Math.sqrt((toN.x-fromN.x)**2+(toN.y-fromN.y)**2)) : 0;
+                  return(
+                    <button key={edge.id}
+                      onClick={()=>setEditHighlightEdgeId(isSel?null:edge.id)}
+                      onDoubleClick={()=>{
+                        setSelectedEdgeId(edge.id);
+                        setSelectedNodeId(null);
+                        setPanelOpen(true);
+                        setCmdTab("props");
+                      }}
+                      className={"w-full flex items-center gap-2 px-2.5 py-2 rounded-lg border text-left transition "+(isSel?"border-purple-400 bg-purple-50/70 shadow-sm":"border-slate-200 bg-white hover:border-slate-300 hover:bg-slate-50/50")}>
+                      <div className={"w-5 h-5 rounded grid place-items-center shrink-0 "+(isSel?"bg-purple-600":"bg-slate-100")}>
+                        <Icon name={edge.dir==="bi"?"ArrowLeftRight":"ArrowRight"} size={11} className={isSel?"text-white":"text-slate-400"}/>
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className={"text-[12px] font-semibold tnum "+(isSel?"text-purple-700":"text-slate-800")}>{edge.from} → {edge.to}</div>
+                        <div className="text-[10px] text-slate-400 tnum">{edge.id} · {dist}px</div>
+                      </div>
+                      {ep.inactive&&<span className="text-[9.5px] font-semibold px-1.5 py-0.5 rounded text-slate-400 bg-slate-100">비활성</span>}
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        )}
         <div className={mapFullscreen&&editMode ? "flex-1 min-w-0 flex flex-col overflow-hidden" : "flex flex-col"}>
           <div className="h-11 px-4 border-b border-slate-200 flex items-center gap-2">
             <Icon name="Map" size={14} className="text-slate-500"/>
@@ -948,22 +1133,25 @@ function MonitoringHome({ onNavigate }) {
             </div>
             <span className="ml-1 text-[11px] text-slate-500">{visible.length}/{mapRobots.length} 표시</span>
             <div className="ml-auto flex items-center gap-1">
-              {editMode ? (<>
-                <button onClick={exitEdit}
-                  className="h-7 px-2.5 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1 border border-slate-200">
-                  <Icon name="X" size={11}/> 취소
-                </button>
-                <button onClick={exitEdit}
-                  className="h-7 px-2.5 rounded text-[11.5px] text-white bg-blue-600 hover:bg-blue-700 flex items-center gap-1">
-                  <Icon name="Save" size={11}/> 저장
-                </button>
-              </>) : (
-                <button onClick={()=>{ setMapFullscreen(true); setEditMode(true); }}
+              {!editMode && (
+                <button onClick={enterEdit}
                   className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1">
                   <Icon name="Pencil" size={11}/> 편집
                 </button>
               )}
               <div className="w-px h-4 bg-slate-200 mx-0.5"/>
+              {/* 편집 상태 표시 */}
+              {editMode&&(
+                <div className="flex items-center gap-1.5 px-2 h-7 rounded bg-slate-50 border border-slate-200">
+                  <div className={"w-1.5 h-1.5 rounded-full shrink-0 "+(editingUser?"bg-amber-400 animate-pulse":"bg-emerald-400 animate-pulse")}/>
+                  <span className="text-[11px] text-slate-600 whitespace-nowrap">
+                    {editingUser
+                      ? <><span className="font-semibold text-amber-600">{editingUser}</span> 님이 편집중이에요</>
+                      : "현재는 나만 편집중이에요"
+                    }
+                  </span>
+                </div>
+              )}
               <div className="relative">
                 <button onClick={()=>setLayerOpen(o=>!o)}
                   className={"h-7 px-2.5 flex items-center gap-1.5 rounded text-[11.5px] font-medium transition "+(layerOpen?"bg-blue-50 text-blue-700":"text-slate-600 hover:bg-slate-100")}>
@@ -1003,11 +1191,13 @@ function MonitoringHome({ onNavigate }) {
                   </div>
                 </>}
               </div>
-              <button onClick={()=>setMapFullscreen(o=>!o)}
-                className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1">
-                <Icon name={mapFullscreen?"Minimize2":"Maximize2"} size={11}/>
-                {mapFullscreen?"축소":"전체화면"}
-              </button>
+              {!editMode&&(
+                <button onClick={()=>setMapFullscreen(o=>!o)}
+                  className="h-7 px-2 rounded text-[11.5px] text-slate-600 hover:bg-slate-100 flex items-center gap-1">
+                  <Icon name={mapFullscreen?"Minimize2":"Maximize2"} size={11}/>
+                  {mapFullscreen?"축소":"전체화면"}
+                </button>
+              )}
               <div className="w-px h-4 bg-slate-200 mx-1"/>
               <button onClick={()=>setPanelOpen(o=>!o)}
                 className={"h-7 px-2.5 rounded text-[11.5px] font-medium flex items-center gap-1.5 transition-colors "+(panelOpen?"bg-blue-50 text-blue-700 border border-blue-200":"text-slate-600 hover:bg-slate-100 border border-transparent")}>
@@ -1039,71 +1229,137 @@ function MonitoringHome({ onNavigate }) {
             onMouseLeave={handleMapMouseUp}>
             {/* Zone areas */}
             {/* Zone areas */}
-            {layers.has("zone")&&<>
-            <div className="absolute top-11 left-11 w-64 h-36 rounded border border-blue-200 bg-blue-50/30 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-blue-700/70 uppercase">Zone A · 입고</span></div>
-            <div className="absolute top-11 right-11 w-72 h-40 rounded border border-emerald-200 bg-emerald-50/30 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-emerald-700/70 uppercase">Zone B · 하역</span></div>
-            <div className="absolute bottom-11 left-11 w-52 h-20 rounded border border-slate-200 bg-slate-100/40 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-slate-500 uppercase">Zone C · 충전</span></div>
-            <div className="absolute bottom-11 right-40 w-60 h-24 rounded border border-purple-200 bg-purple-50/30 pointer-events-none"><span className="absolute top-1.5 left-2 text-[10px] font-medium text-purple-700/70 uppercase">Zone D · 조립</span></div>
-            </>}
+            {layers.has("zone")&&editZones.map(z=>(
+              <div key={z.id} className="absolute rounded pointer-events-none"
+                style={{
+                  left: z.x, top: z.y, width: z.w, height: z.h,
+                  border: `1.5px dashed ${z.color}60`,
+                  background: z.color + "12",
+                }}>
+                <span className="absolute top-1.5 left-2 text-[10px] font-semibold uppercase"
+                  style={{color: z.color + "cc"}}>{z.name}</span>
+              </div>
+            ))}
 
             {/* Edges (SVG) */}
             {layers.has("edge")&&(
-            <svg className="absolute inset-0 w-full h-full pointer-events-none" style={{overflow:"visible"}}>
-              {[
-                ["MN-1","MN-2"],["MN-2","MN-3"],["MN-3","MN-4"],["MN-4","MN-5"],["MN-5","MN-6"],
-                ["MN-5","MN-7"],["MN-6","MN-8"],["MN-7","MN-8"],
-                ["MN-9","MN-10"],["MN-1","MN-9"],
-                ["MN-11","MN-12"],["MN-4","MN-11"],
-              ].map(([aId,bId],i)=>{
-                const a=mapNodes.find(n=>n.id===aId), b=mapNodes.find(n=>n.id===bId);
-                if(!a||!b) return null;
-                return <line key={i} x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="#94a3b8" strokeWidth="1.5" strokeDasharray="5 3" opacity="0.6"/>;
-              })}
+            <svg className="absolute inset-0 w-full h-full" style={{overflow:"visible", pointerEvents:"none"}}>
               <defs>
                 <marker id="arr" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
                   <path d="M0,0 L0,6 L6,3 z" fill="#94a3b8" opacity="0.7"/>
                 </marker>
+                <marker id="arr-sel" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L6,3 z" fill="#2563eb"/>
+                </marker>
+                <marker id="arr-hl" markerWidth="6" markerHeight="6" refX="5" refY="3" orient="auto">
+                  <path d="M0,0 L0,6 L6,3 z" fill="#f59e0b"/>
+                </marker>
               </defs>
-              {[["MN-1","MN-2"],["MN-3","MN-4"],["MN-4","MN-5"]].map(([aId,bId],i)=>{
-                const a=mapNodes.find(n=>n.id===aId), b=mapNodes.find(n=>n.id===bId);
+              {mapEdges.map(e=>{
+                const a=mapNodes.find(n=>n.id===e.from), b=mapNodes.find(n=>n.id===e.to);
                 if(!a||!b) return null;
+                const isSel    = selectedEdgeId===e.id;
+                const isEditHl = editMode && editHighlightEdgeId===e.id;
+                const ep = edgeProps[e.id]||{};
+                const inactive = ep.inactive;
                 const mx=(a.x+b.x)/2, my=(a.y+b.y)/2;
-                return <line key={i} x1={a.x} y1={a.y} x2={mx} y2={my} stroke="#94a3b8" strokeWidth="1.5" markerEnd="url(#arr)" opacity="0.5"/>;
+                const dist = Math.round(Math.sqrt((b.x-a.x)**2+(b.y-a.y)**2));
+                const edgeColor = isSel?"#2563eb":isEditHl?"#f59e0b":inactive?"#e2e8f0":"#94a3b8";
+                const edgeW     = (isSel||isEditHl)?2.5:1.5;
+                const arrId     = isSel?"arr-sel":isEditHl?"arr-hl":"arr";
+                return(
+                  <g key={e.id} style={{pointerEvents:"all", cursor:"pointer"}}
+                    onClick={()=>{
+                      setSelectedEdgeId(isSel?null:e.id);
+                      setSelectedNodeId(null);
+                      setPanelOpen(true); setCmdTab("props");
+                    }}
+                    onDoubleClick={()=>{
+                      if(!editMode) return;
+                      setEditHighlightEdgeId(e.id);
+                      setEditTab("edge");
+                      setSelectedEdgeId(e.id);
+                      setSelectedNodeId(null);
+                      setPanelOpen(true);
+                      setCmdTab("props");
+                    }}>
+                    <line x1={a.x} y1={a.y} x2={b.x} y2={b.y} stroke="transparent" strokeWidth="10"/>
+                    <line x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                      stroke={edgeColor} strokeWidth={edgeW}
+                      strokeDasharray={inactive?"3 3":"5 3"}
+                      opacity={inactive?0.4:isEditHl?1:0.8}
+                      markerEnd={e.dir==="bi"?undefined:`url(#${arrId})`}/>
+                    {e.dir==="bi"&&<line x1={a.x} y1={a.y} x2={b.x} y2={b.y}
+                      stroke={edgeColor} strokeWidth={edgeW}
+                      strokeDasharray={inactive?"3 3":"5 3"} opacity={inactive?0.4:isEditHl?1:0.8}
+                      markerEnd={`url(#${arrId})`} markerStart={`url(#${arrId})`}/>}
+                    {isSel&&<text x={mx} y={my-6} textAnchor="middle" fill="#2563eb" fontSize={9} fontWeight="600">{e.id} · {dist}px</text>}
+                    {isEditHl&&!isSel&&<text x={mx} y={my-6} textAnchor="middle" fill="#b45309" fontSize={9} fontWeight="700">{e.id}</text>}
+                    {/* 레인컷 여부 ON → 중앙 X 표시 */}
+                    {ep.laneCut&&(
+                      <g>
+                        <circle cx={mx} cy={my} r={7} fill="white" stroke="#e11d48" strokeWidth={1.5}/>
+                        <line x1={mx-4} y1={my-4} x2={mx+4} y2={my+4} stroke="#e11d48" strokeWidth={2} strokeLinecap="round"/>
+                        <line x1={mx+4} y1={my-4} x2={mx-4} y2={my+4} stroke="#e11d48" strokeWidth={2} strokeLinecap="round"/>
+                      </g>
+                    )}
+                  </g>
+                );
               })}
             </svg>)}
 
             {/* Nodes */}
             {layers.has("node")&&mapNodes.map(node=>{
-              const isSelNode = selectedNodeId === node.id;
+              const isSelNode  = selectedNodeId === node.id;
+              const isEditHl   = editMode && editHighlightNodeId === node.id;
+              const nodeColor  = isSelNode ? "#2563eb" : isEditHl ? "#f59e0b" : "white";
+              const borderClr  = isSelNode ? "#2563eb" : isEditHl ? "#f59e0b" : "#64748b";
+              const nodeSize   = isSelNode ? 14 : isEditHl ? 13 : 10;
               return (
                 <div key={node.id} className="absolute cursor-pointer group"
                   style={{left:node.x, top:node.y, transform:"translate(-50%,-50%)", zIndex:10}}
                   onClick={()=>{
                     setSelectedNodeId(isSelNode ? null : node.id);
+                    setSelectedEdgeId(null);
                     setMoveTarget(node.id);
                     setPanelOpen(true);
                     setCmdTab(isSelNode ? cmdTab : "props");
+                  }}
+                  onDoubleClick={()=>{
+                    if(!editMode) return;
+                    setEditHighlightNodeId(node.id);
+                    setEditTab("node");
+                    setSelectedNodeId(node.id);
+                    setSelectedEdgeId(null);
+                    setPanelOpen(true);
+                    setCmdTab("props");
                   }}>
+                  {isEditHl&&<div style={{
+                    position:"absolute", inset:-8, borderRadius:6,
+                    background:"rgba(245,158,11,0.15)",
+                    border:"1.5px solid rgba(245,158,11,0.5)",
+                    animation:"pulse 1.5s ease-in-out infinite",
+                  }}/>}
                   <div style={{
-                    width: isSelNode ? 14 : 10,
-                    height: isSelNode ? 14 : 10,
+                    width: nodeSize, height: nodeSize,
                     borderRadius: 3,
-                    background: isSelNode ? "#2563eb" : "white",
-                    border: `2px solid ${isSelNode ? "#2563eb" : "#64748b"}`,
+                    background: nodeColor,
+                    border: `2px solid ${borderClr}`,
                     boxShadow: isSelNode
                       ? "0 0 0 4px rgba(37,99,235,0.2), 0 2px 6px rgba(15,23,42,0.2)"
+                      : isEditHl ? "0 0 0 4px rgba(245,158,11,0.25)"
                       : "0 1px 3px rgba(15,23,42,0.15)",
                     transition:"all 0.15s",
                   }}/>
                   <div style={{
-                    position:"absolute", top: isSelNode ? 17 : 13, left:"50%",
+                    position:"absolute", top: nodeSize+3, left:"50%",
                     transform:"translateX(-50%)",
-                    fontSize: 9, fontWeight: isSelNode ? 700 : 600,
-                    color: isSelNode ? "#1d4ed8" : "#475569",
+                    fontSize: 9, fontWeight: (isSelNode||isEditHl) ? 700 : 600,
+                    color: isSelNode ? "#1d4ed8" : isEditHl ? "#b45309" : "#475569",
                     whiteSpace:"nowrap",
-                    background: isSelNode ? "rgba(239,246,255,0.95)" : "rgba(255,255,255,0.85)",
+                    background: isSelNode ? "rgba(239,246,255,0.95)" : isEditHl ? "rgba(255,251,235,0.95)" : "rgba(255,255,255,0.85)",
                     padding:"1px 4px", borderRadius:3, lineHeight:1.4,
-                    border: isSelNode ? "1px solid #bfdbfe" : "none",
+                    border: isSelNode ? "1px solid #bfdbfe" : isEditHl ? "1px solid #fcd34d" : "none",
                     transition:"all 0.15s",
                   }}>
                     {node.label}
@@ -1310,56 +1566,197 @@ function MonitoringHome({ onNavigate }) {
                 </CmdSection>
               </div>
             ) : (
-              <div className="p-3 space-y-3">
-                {/* Node selected */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-3">
+                {/* ── 노드 Properties ── */}
                 {selectedNodeId && (() => {
                   const node = mapNodes.find(n=>n.id===selectedNodeId);
-                  if (!node) return null;
-                  const connectedEdges = [
-                    ["MN-1","MN-2"],["MN-2","MN-3"],["MN-3","MN-4"],["MN-4","MN-5"],["MN-5","MN-6"],
-                    ["MN-5","MN-7"],["MN-6","MN-8"],["MN-7","MN-8"],
-                    ["MN-9","MN-10"],["MN-1","MN-9"],["MN-11","MN-12"],["MN-4","MN-11"],
-                  ].filter(([a,b])=>a===node.id||b===node.id);
-                  const connectedNodes = connectedEdges.map(([a,b])=>a===node.id?b:a)
+                  if(!node) return null;
+                  const np = nodeProps[node.id]||{type:"none",avoidance:false,mutualExcl:false,theta:0};
+                  const connectedEdges = mapEdges.filter(e=>e.from===node.id||e.to===node.id);
+                  const connectedNodes = connectedEdges.map(e=>e.from===node.id?e.to:e.from)
                     .map(id=>mapNodes.find(n=>n.id===id)).filter(Boolean);
-                  return (
-                    <div className="space-y-3">
-                      <div className="rounded-md border border-blue-200 bg-blue-50/60 p-2.5">
-                        <div className="flex items-center gap-2 mb-2">
-                          <div className="w-5 h-5 rounded bg-blue-600 grid place-items-center"><Icon name="MapPin" size={11} className="text-white"/></div>
-                          <div><div className="text-[12.5px] font-semibold text-blue-900">{node.label}</div><div className="text-[10px] text-blue-600 tnum">{node.id}</div></div>
-                          <button onClick={()=>setSelectedNodeId(null)} className="ml-auto w-6 h-6 grid place-items-center rounded hover:bg-blue-100 text-blue-500"><Icon name="X" size={11}/></button>
-                        </div>
-                        <div className="grid grid-cols-2 gap-x-3 gap-y-1.5 text-[11px]">
-                          <div><div className="text-[10px] text-blue-500">위치 X</div><div className="font-medium text-blue-900 tnum">{node.x}</div></div>
-                          <div><div className="text-[10px] text-blue-500">위치 Y</div><div className="font-medium text-blue-900 tnum">{node.y}</div></div>
-                          <div className="col-span-2"><div className="text-[10px] text-blue-500 mb-0.5">지원 Fleet</div><div className="flex gap-1">{node.fleets.map(fId=>{const f=fleets.find(fl=>fl.id===fId);return <span key={fId} className="px-1.5 py-px rounded text-[10px] font-medium text-white" style={{background:f?.color||"#64748b"}}>{f?.name||fId}</span>;})}
-                          </div></div>
-                        </div>
-                      </div>
-                      <div className="rounded-md border border-slate-200 p-2.5">
-                        <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">연결된 노드 ({connectedNodes.length})</div>
-                        <div className="space-y-1">
-                          {connectedNodes.map(cn=>(
-                            <button key={cn.id} onClick={()=>{setSelectedNodeId(cn.id);setMoveTarget(cn.id);}}
-                              className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 text-left group">
-                              <div className="w-2 h-2 rounded-sm bg-slate-400 group-hover:bg-blue-500 shrink-0"/>
-                              <span className="text-[11.5px] text-slate-700 flex-1">{cn.label}</span>
-                              <span className="text-[10px] text-slate-400 tnum">{cn.id}</span>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <button onClick={()=>{setCmdTab("command");}}
-                        className="w-full h-8 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-medium flex items-center justify-center gap-1.5">
-                        <Icon name="Navigation" size={12}/> 이 노드로 이동 명령
+                  const PropToggle=({label,val,onToggle})=>(
+                    <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                      <span className="text-[11.5px] text-slate-700">{label}</span>
+                      <button onClick={editMode?onToggle:undefined} disabled={!editMode}
+                        className={"w-9 h-5 rounded-full relative transition-colors shrink-0 "+(val?"bg-blue-500":"bg-slate-300")+(editMode?"":" opacity-60 cursor-not-allowed")}>
+                        <div className={"absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all "+(val?"left-4":"left-0.5")}/>
                       </button>
                     </div>
                   );
+                  return (
+                    <div className="space-y-2.5">
+                      {/* 헤더 */}
+                      <div className="rounded-lg border border-blue-200 bg-blue-50/60 p-2.5">
+                        <div className="flex items-center gap-2 mb-2">
+                          <div className="w-6 h-6 rounded bg-blue-600 grid place-items-center shrink-0"><Icon name="MapPin" size={12} className="text-white"/></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold text-blue-900">{node.label}</div>
+                            <div className="text-[10px] text-blue-500 tnum">{node.id}</div>
+                          </div>
+                          <button onClick={()=>setSelectedNodeId(null)} className="w-6 h-6 grid place-items-center rounded hover:bg-blue-100 text-blue-400"><Icon name="X" size={11}/></button>
+                        </div>
+                        <div className="grid grid-cols-3 gap-2 text-[11px]">
+                          <div><div className="text-[10px] text-blue-400">X</div><div className="font-semibold text-blue-900 tnum">{node.x}</div></div>
+                          <div><div className="text-[10px] text-blue-400">Y</div><div className="font-semibold text-blue-900 tnum">{node.y}</div></div>
+                          <div><div className="text-[10px] text-blue-400">θ (deg)</div><div className="font-semibold text-blue-900 tnum">{np.theta}</div></div>
+                        </div>
+                      </div>
+
+                      {/* 노드 유형 + 특성 — 편집 모드 외 호버 시 tooltip */}
+                      <div title={!editMode?"맵 편집에서 수정할 수 있어요":undefined}>
+                      {/* 노드 유형 */}
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5 mb-2.5">
+                        <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide mb-2">노드 유형</div>
+                        <div className="relative">
+                          <select value={np.type} onChange={e=>setNodeProp(node.id,"type",e.target.value)}
+                            disabled={!editMode}
+                            className={"w-full h-8 pl-2.5 pr-7 rounded-md border text-[12.5px] font-medium outline-none appearance-none "+(editMode?"border-slate-200 bg-white text-slate-800 focus:border-blue-400 cursor-pointer":"border-slate-100 bg-slate-50 text-slate-500 cursor-default")}>
+                            <option value="pickdrop">Pick / Drop</option>
+                            <option value="charge">충전 (Charge)</option>
+                            <option value="storage">Storage</option>
+                            <option value="none">None</option>
+                          </select>
+                          <Icon name="ChevronDown" size={12} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+                        </div>
+                      </div>
+
+                      {/* 특성 토글 */}
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                        <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide mb-1">특성</div>
+                        <PropToggle label="회피 여부" val={np.avoidance} onToggle={()=>setNodeProp(node.id,"avoidance",!np.avoidance)}/>
+                        <PropToggle label="상호 배제 영역" val={np.mutualExcl} onToggle={()=>setNodeProp(node.id,"mutualExcl",!np.mutualExcl)}/>
+                      </div>
+                      </div>{/* /tooltip wrapper */}
+
+                      {/* 연결 엣지 */}
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                        <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide mb-1.5">연결 노드 ({connectedNodes.length})</div>
+                        {connectedNodes.map(cn=>(
+                          <button key={cn.id} onClick={()=>{setSelectedNodeId(cn.id);setSelectedEdgeId(null);setMoveTarget(cn.id);}}
+                            className="w-full flex items-center gap-2 px-2 py-1.5 rounded hover:bg-slate-50 text-left group">
+                            <div className="w-1.5 h-1.5 rounded-sm bg-slate-300 group-hover:bg-blue-500 shrink-0"/>
+                            <span className="text-[11.5px] text-slate-700 flex-1 truncate">{cn.label}</span>
+                            <span className="text-[10px] text-slate-400 tnum">{cn.id}</span>
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={()=>setCmdTab("command")}
+                        className="w-full h-8 rounded-md bg-indigo-600 hover:bg-indigo-700 text-white text-[12px] font-medium flex items-center justify-center gap-1.5">
+                        <Icon name="Navigation" size={12}/> 이 노드로 이동 명령
+                      </button>
+                      {/* 취소 / 저장 — 편집 모드에서만 */}
+                      {editMode&&(()=>{
+                        const isDirty = JSON.stringify(nodeProps[node.id]) !== JSON.stringify(committedNodeProps[node.id]);
+                        return (
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={()=>cancelNodeProps(node.id)} disabled={!isDirty}
+                              className={"flex-1 h-8 rounded-md border text-[12px] font-medium flex items-center justify-center gap-1 transition "+(isDirty?"border-slate-200 bg-white hover:bg-slate-50 text-slate-600":"border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed")}>
+                              <Icon name="RotateCcw" size={11}/> 취소
+                            </button>
+                            <button onClick={()=>saveNodeProps(node.id)} disabled={!isDirty}
+                              className={"flex-1 h-8 rounded-md text-[12px] font-medium flex items-center justify-center gap-1 transition "+(isDirty?"bg-blue-600 hover:bg-blue-700 text-white":"bg-slate-100 text-slate-300 cursor-not-allowed")}>
+                              <Icon name="Save" size={11}/> 저장
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
                 })()}
-                {/* Robot selected */}
-                {!selectedNodeId && (!sel ? (
-                  <div className="p-6 text-center"><div className="w-10 h-10 mx-auto rounded-full bg-slate-50 grid place-items-center mb-2"><Icon name="Info" size={16} className="text-slate-400"/></div><div className="text-[12.5px] font-medium text-slate-700">로봇 선택 안 됨</div><div className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">맵에서 로봇을 클릭하면<br/>오더 현황 및 속성이 표시됩니다.</div></div>
+
+                {/* ── 엣지 Properties ── */}
+                {selectedEdgeId && !selectedNodeId && (() => {
+                  const edge = mapEdges.find(e=>e.id===selectedEdgeId);
+                  if(!edge) return null;
+                  const ep = edgeProps[edge.id]||{};
+                  const fromNode = mapNodes.find(n=>n.id===edge.from);
+                  const toNode   = mapNodes.find(n=>n.id===edge.to);
+                  const dist = fromNode&&toNode ? Math.round(Math.sqrt((toNode.x-fromNode.x)**2+(toNode.y-fromNode.y)**2)) : 0;
+                  const angle = fromNode&&toNode ? Math.round(Math.atan2(toNode.y-fromNode.y, toNode.x-fromNode.x)*180/Math.PI) : 0;
+                  const dirLabel = edge.dir==="bi"?"양방향":"단방향";
+                  const EdgeToggle=({label,val,onToggle})=>(
+                    <div className="flex items-center justify-between py-2 border-b border-slate-100 last:border-0">
+                      <span className="text-[11.5px] text-slate-700">{label}</span>
+                      <button onClick={editMode?onToggle:undefined} disabled={!editMode}
+                        className={"w-9 h-5 rounded-full relative transition-colors shrink-0 "+(val?"bg-blue-500":"bg-slate-300")+(editMode?"":" opacity-60 cursor-not-allowed")}>
+                        <div className={"absolute top-0.5 w-4 h-4 rounded-full bg-white shadow transition-all "+(val?"left-4":"left-0.5")}/>
+                      </button>
+                    </div>
+                  );
+                  return (
+                    <div className="space-y-2.5">
+                      {/* 헤더 */}
+                      <div className="rounded-lg border border-purple-200 bg-purple-50/50 p-2.5">
+                        <div className="flex items-center gap-2 mb-2.5">
+                          <div className="w-6 h-6 rounded bg-purple-600 grid place-items-center shrink-0"><Icon name={edge.dir==="bi"?"ArrowLeftRight":"ArrowRight"} size={12} className="text-white"/></div>
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[13px] font-semibold text-purple-900">{edge.id}</div>
+                            <div className="text-[10px] text-purple-500">{dirLabel}</div>
+                          </div>
+                          <button onClick={()=>setSelectedEdgeId(null)} className="w-6 h-6 grid place-items-center rounded hover:bg-purple-100 text-purple-400"><Icon name="X" size={11}/></button>
+                        </div>
+                        <div className="grid grid-cols-2 gap-2 text-[11px]">
+                          <div className="col-span-2 flex items-center gap-1.5 px-2 py-1.5 rounded bg-white border border-purple-100">
+                            <span className="font-semibold text-purple-700 tnum">{edge.from}</span>
+                            <Icon name={edge.dir==="bi"?"ArrowLeftRight":"ArrowRight"} size={11} className="text-purple-400 shrink-0"/>
+                            <span className="font-semibold text-purple-700 tnum">{edge.to}</span>
+                          </div>
+                          <div><div className="text-[10px] text-purple-400">거리</div><div className="font-semibold text-purple-900 tnum">{dist} px</div></div>
+                          <div><div className="text-[10px] text-purple-400">방향각</div><div className="font-semibold text-purple-900 tnum">{angle}°</div></div>
+                        </div>
+                      </div>
+
+                      {/* 속도 + 특성 — 편집 모드 외 호버 시 tooltip */}
+                      <div title={!editMode?"맵 편집에서 수정할 수 있어요":undefined}>
+                      {/* 속도 */}
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5 mb-2.5">
+                        <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide mb-2">속도 (m/s)</div>
+                        <div className="flex items-center gap-2">
+                          <input type="range" min="0.1" max="3.0" step="0.1" value={ep.speed||1.0}
+                            onChange={e=>editMode&&setEdgeProp(edge.id,"speed",Number(e.target.value))}
+                            disabled={!editMode}
+                            className={"flex-1 accent-blue-600"+(editMode?"":" opacity-50 cursor-not-allowed")}/>
+                          <span className="text-[12px] font-semibold text-slate-900 tnum w-10 text-right">{(ep.speed||1.0).toFixed(1)}</span>
+                        </div>
+                      </div>
+
+                      {/* 토글 특성 */}
+                      <div className="rounded-lg border border-slate-200 bg-white p-2.5">
+                        <div className="text-[10.5px] font-semibold text-slate-400 uppercase tracking-wide mb-1">특성</div>
+                        <EdgeToggle label="회전 여부"        val={ep.rotation}   onToggle={()=>setEdgeProp(edge.id,"rotation",  !ep.rotation)}/>
+                        <EdgeToggle label="비활성"           val={ep.inactive}   onToggle={()=>setEdgeProp(edge.id,"inactive",   !ep.inactive)}/>
+                        <EdgeToggle label="상호 배제 영역"   val={ep.mutualExcl} onToggle={()=>setEdgeProp(edge.id,"mutualExcl", !ep.mutualExcl)}/>
+                        <EdgeToggle label="레인컷 여부"      val={ep.laneCut}    onToggle={()=>setEdgeProp(edge.id,"laneCut",    !ep.laneCut)}/>
+                      </div>
+                      </div>{/* /tooltip wrapper */}
+                      {/* 취소 / 저장 — 편집 모드에서만 */}
+                      {editMode&&(()=>{
+                        const isDirty = JSON.stringify(edgeProps[edge.id]) !== JSON.stringify(committedEdgeProps[edge.id]);
+                        return (
+                          <div className="flex gap-2 pt-1">
+                            <button onClick={()=>cancelEdgeProps(edge.id)} disabled={!isDirty}
+                              className={"flex-1 h-8 rounded-md border text-[12px] font-medium flex items-center justify-center gap-1 transition "+(isDirty?"border-slate-200 bg-white hover:bg-slate-50 text-slate-600":"border-slate-100 bg-slate-50 text-slate-300 cursor-not-allowed")}>
+                              <Icon name="RotateCcw" size={11}/> 취소
+                            </button>
+                            <button onClick={()=>saveEdgeProps(edge.id)} disabled={!isDirty}
+                              className={"flex-1 h-8 rounded-md text-[12px] font-medium flex items-center justify-center gap-1 transition "+(isDirty?"bg-blue-600 hover:bg-blue-700 text-white":"bg-slate-100 text-slate-300 cursor-not-allowed")}>
+                              <Icon name="Save" size={11}/> 저장
+                            </button>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  );
+                })()}
+
+                {/* 아무것도 선택 안 됨 */}
+                {!selectedNodeId && !selectedEdgeId && (!sel ? (
+                  <div className="py-8 text-center">
+                    <div className="w-10 h-10 mx-auto rounded-full bg-slate-50 grid place-items-center mb-2"><Icon name="Info" size={16} className="text-slate-400"/></div>
+                    <div className="text-[12.5px] font-medium text-slate-700">선택 없음</div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">맵에서 노드·엣지·로봇을<br/>클릭하면 속성이 표시됩니다.</div>
+                  </div>
                 ) : (<>
                   <div className="rounded-md border border-slate-200 p-2.5">
                     <div className="text-[10.5px] font-medium text-slate-400 uppercase tracking-wider mb-1.5">Specification</div>
@@ -1390,7 +1787,8 @@ function MonitoringHome({ onNavigate }) {
             {/* ── Manual 탭 ── */}
             {cmdTab==="manual"&&<ManualTab/>}
           </div>
-        </div>
+      </div>
+      </div>
     </div>
   );
 }
@@ -3474,6 +3872,7 @@ const SC = {
   running:{bg:"bg-blue-100", border:"border-blue-400", fg:"text-blue-900", label:"진행중",chip:"#2563eb"},
   queued: {bg:"bg-amber-50", border:"border-amber-300",fg:"text-amber-900",label:"예약",chip:"#d97706"},
   error:  {bg:"bg-rose-100", border:"border-rose-400", fg:"text-rose-900", label:"실패",chip:"#e11d48"},
+  pending:{bg:"bg-purple-50",border:"border-purple-400",fg:"text-purple-900",label:"Pending",chip:"#7c3aed"},
 };
 
 function computePlacement(allOrders, robotId, desiredStart, duration, ignoreId) {
@@ -3637,7 +4036,303 @@ function MultiFleetDropdown({ value, onChange, counts }) {
   );
 }
 
-function SchedulerView({ initialFocusRecipeId }) {
+/* ══════════════════════════════════════════
+   ORDER TEMPLATE VIEW
+══════════════════════════════════════════ */
+function OrderTemplateView({ onNavigate }) {
+  const FLEETS = [
+    { id:"amr",  name:"Delivery-Tool",  icon:"Wrench",      color:"#2563eb", robotIds:["Tool001","Tool002","Tool003","Tool004"] },
+    { id:"agv",  name:"Ride",           icon:"Users",       color:"#10b981", robotIds:["Ride001","Ride002"] },
+    { id:"arm",  name:"Delivery-Parts", icon:"Package",     color:"#7c3aed", robotIds:["Part001","Part002"] },
+  ];
+  const NODES = mapNodes.map(n=>({id:n.id, label:n.label}));
+  const PARTS_CATS = ["CPT","CTR","CBT","CLV","CPS"];
+  const LINES = ["P3","P4","P5"];
+  const FLOORS = ["3층","7층"];
+
+  const [step, setStep] = useState(1); // 1:fleet선택, 2:폼 입력, 3:확인
+  const [fleet, setFleet] = useState(null);
+  const [form, setForm] = useState({});
+  const setF = (k,v) => setForm(p=>({...p,[k]:v}));
+
+  const fleetDef = FLEETS.find(f=>f.id===fleet);
+
+  // 스텝 시각화
+  const STEPS = ["Fleet 선택","오더 입력","확인 및 발행"];
+  const StepBar = ()=>(
+    <div className="flex items-center gap-0 mb-8">
+      {STEPS.map((s,i)=>{
+        const done=i<step-1, cur=i===step-1;
+        return(
+          <React.Fragment key={i}>
+            <div className="flex flex-col items-center gap-1.5">
+              <div className={"w-8 h-8 rounded-full grid place-items-center text-[12px] font-bold transition-all "+(done?"bg-blue-600 text-white":cur?"bg-blue-600 text-white ring-4 ring-blue-100":"bg-slate-200 text-slate-400")}>
+                {done?<Icon name="Check" size={14}/>:i+1}
+              </div>
+              <span className={"text-[11px] font-medium whitespace-nowrap "+(cur?"text-blue-700":done?"text-blue-500":"text-slate-400")}>{s}</span>
+            </div>
+            {i<STEPS.length-1&&<div className={"flex-1 h-0.5 mb-5 mx-1 "+(i<step-1?"bg-blue-400":"bg-slate-200")}/>}
+          </React.Fragment>
+        );
+      })}
+    </div>
+  );
+
+  const Field = ({label,children,required})=>(
+    <div className="space-y-1.5">
+      <label className="text-[12px] font-semibold text-slate-600">{label}{required&&<span className="text-rose-500 ml-0.5">*</span>}</label>
+      {children}
+    </div>
+  );
+  const Select = ({val,onChange,opts,placeholder})=>(
+    <div className="relative">
+      <select value={val||""} onChange={e=>onChange(e.target.value)}
+        className="w-full h-9 pl-3 pr-8 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50 appearance-none">
+        <option value="">{placeholder||"선택"}</option>
+        {opts.map(o=><option key={o.id||o} value={o.id||o}>{o.label||o}</option>)}
+      </select>
+      <Icon name="ChevronDown" size={13} className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
+    </div>
+  );
+  const Input = ({val,onChange,placeholder,type="text"})=>(
+    <input type={type} value={val||""} onChange={e=>onChange(e.target.value)} placeholder={placeholder}
+      className="w-full h-9 px-3 rounded-lg border border-slate-200 bg-white text-[13px] text-slate-800 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-50"/>
+  );
+
+  // Fleet별 폼
+  const renderForm = () => {
+    if(!fleetDef) return null;
+    if(fleetDef.id==="amr") return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Pick 위치" required><Select val={form.pickNode} onChange={v=>setF("pickNode",v)} opts={NODES} placeholder="Pick 노드 선택"/></Field>
+          <Field label="Drop 위치" required><Select val={form.dropNode} onChange={v=>setF("dropNode",v)} opts={NODES} placeholder="Drop 노드 선택"/></Field>
+        </div>
+        <Field label="Tool Cart ID" required>
+          <Select val={form.cartId} onChange={v=>setF("cartId",v)}
+            opts={["TC-001","TC-002","TC-003","TC-004","TC-005"].map(id=>({id,label:id}))} placeholder="Cart 선택"/>
+        </Field>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="담당 로봇"><Select val={form.robotId} onChange={v=>setF("robotId",v)} opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/></Field>
+          <Field label="우선순위"><Select val={form.priority} onChange={v=>setF("priority",v)} opts={[{id:"normal",label:"일반"},{id:"high",label:"높음"},{id:"urgent",label:"긴급"}]} placeholder="일반"/></Field>
+        </div>
+        <Field label="메모"><Input val={form.memo} onChange={v=>setF("memo",v)} placeholder="특이사항 입력 (선택)"/></Field>
+      </div>
+    );
+    if(fleetDef.id==="agv") return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="승차 위치" required><Select val={form.pickNode} onChange={v=>setF("pickNode",v)} opts={NODES} placeholder="승차 노드 선택"/></Field>
+          <Field label="하차 위치" required><Select val={form.dropNode} onChange={v=>setF("dropNode",v)} opts={NODES} placeholder="하차 노드 선택"/></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="승객 ID" required><Input val={form.passengerId} onChange={v=>setF("passengerId",v)} placeholder="사번 또는 ID"/></Field>
+          <Field label="승객 이름" required><Input val={form.passengerName} onChange={v=>setF("passengerName",v)} placeholder="이름 입력"/></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="담당 로봇"><Select val={form.robotId} onChange={v=>setF("robotId",v)} opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/></Field>
+          <Field label="우선순위"><Select val={form.priority} onChange={v=>setF("priority",v)} opts={[{id:"normal",label:"일반"},{id:"high",label:"높음"},{id:"urgent",label:"긴급"}]} placeholder="일반"/></Field>
+        </div>
+        <Field label="메모"><Input val={form.memo} onChange={v=>setF("memo",v)} placeholder="특이사항 입력 (선택)"/></Field>
+      </div>
+    );
+    if(fleetDef.id==="arm") return (
+      <div className="space-y-4">
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="Pick 위치" required><Select val={form.pickNode} onChange={v=>setF("pickNode",v)} opts={NODES} placeholder="Pick 노드 선택"/></Field>
+          <Field label="Drop 위치" required><Select val={form.dropNode} onChange={v=>setF("dropNode",v)} opts={NODES} placeholder="Drop 노드 선택"/></Field>
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <Field label="부품 카테고리" required><Select val={form.partsCat} onChange={v=>setF("partsCat",v)} opts={PARTS_CATS.map(c=>({id:c,label:c}))} placeholder="선택"/></Field>
+          <Field label="라인" required><Select val={form.line} onChange={v=>setF("line",v)} opts={LINES.map(l=>({id:l,label:l}))} placeholder="선택"/></Field>
+          <Field label="수량" required><Input val={form.qty} onChange={v=>setF("qty",v)} placeholder="수량" type="number"/></Field>
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <Field label="담당 로봇"><Select val={form.robotId} onChange={v=>setF("robotId",v)} opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/></Field>
+          <Field label="우선순위"><Select val={form.priority} onChange={v=>setF("priority",v)} opts={[{id:"normal",label:"일반"},{id:"high",label:"높음"},{id:"urgent",label:"긴급"}]} placeholder="일반"/></Field>
+        </div>
+        <Field label="메모"><Input val={form.memo} onChange={v=>setF("memo",v)} placeholder="특이사항 입력 (선택)"/></Field>
+      </div>
+    );
+  };
+
+  // 필수값 검증
+  const isValid = ()=>{
+    if(!fleet) return false;
+    if(!form.pickNode||!form.dropNode) return false;
+    if(fleetDef?.id==="amr" && !form.cartId) return false;
+    if(fleetDef?.id==="agv" && (!form.passengerId||!form.passengerName)) return false;
+    if(fleetDef?.id==="arm" && (!form.partsCat||!form.line||!form.qty)) return false;
+    return true;
+  };
+
+  // 오더 발행
+  const publish = ()=>{
+    const ordId = "ORD-"+Date.now().toString().slice(-5);
+    const now = new Date();
+    const startMin = now.getHours()*60+now.getMinutes()+5;
+    const order = {
+      id: ordId,
+      fleet: fleetDef.id,
+      fleetName: fleetDef.name,
+      fleetColor: fleetDef.color,
+      robotId: form.robotId||(fleetDef.robotIds[0]),
+      pickNode: form.pickNode,
+      dropNode: form.dropNode,
+      startMin,
+      duration: 30,
+      status: "pending",
+      detail: fleetDef.id==="amr"
+        ? {cartId:form.cartId}
+        : fleetDef.id==="agv"
+        ? {passengerId:form.passengerId, passengerName:form.passengerName}
+        : {partsCat:form.partsCat, line:form.line, qty:form.qty},
+      priority: form.priority||"normal",
+      memo: form.memo||"",
+    };
+    onNavigate("schedule", {pendingOrder:order});
+  };
+
+  // 확인 화면 요약
+  const SummaryRow = ({label,value})=>(
+    <div className="flex items-start gap-3 py-2.5 border-b border-slate-100 last:border-0">
+      <span className="text-[12px] text-slate-500 w-24 shrink-0">{label}</span>
+      <span className="text-[13px] font-semibold text-slate-900">{value||"—"}</span>
+    </div>
+  );
+
+  const pickLabel = NODES.find(n=>n.id===form.pickNode)?.label||form.pickNode;
+  const dropLabel = NODES.find(n=>n.id===form.dropNode)?.label||form.dropNode;
+
+  return (
+    <div className="h-full overflow-auto p-6 bg-slate-50">
+      <div className="max-w-2xl mx-auto">
+        {/* 헤더 */}
+        <div className="mb-6">
+          <div className="flex items-center gap-2 text-[12px] text-slate-400 mb-1">
+            <span>작업 관리</span><Icon name="ChevronRight" size={12}/><span className="text-slate-600 font-medium">오더 템플릿</span>
+          </div>
+          <h1 className="text-[22px] font-bold text-slate-900">오더 발행</h1>
+          <p className="text-[13px] text-slate-500 mt-1">Fleet 선택 후 필요 정보를 입력하면 스케줄러에 자동 등록됩니다.</p>
+        </div>
+
+        <StepBar/>
+
+        {/* Step 1: Fleet 선택 */}
+        {step===1&&(
+          <div className="space-y-3">
+            <div className="text-[13px] font-semibold text-slate-700 mb-4">어느 Fleet으로 발행할까요?</div>
+            {FLEETS.map(f=>(
+              <button key={f.id} onClick={()=>{setFleet(f.id);setForm({});}}
+                className={"w-full p-4 rounded-xl border-2 text-left flex items-center gap-4 transition "+(fleet===f.id?"border-blue-500 bg-blue-50/60 shadow-sm":"border-slate-200 bg-white hover:border-slate-300")}>
+                <div className="w-12 h-12 rounded-xl grid place-items-center shrink-0" style={{background:f.color+"18"}}>
+                  <Icon name={f.icon} size={22} style={{color:f.color}}/>
+                </div>
+                <div className="flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[15px] font-bold text-slate-900">{f.name}</span>
+                    <span className="text-[11px] px-2 py-0.5 rounded-full font-medium" style={{background:f.color+"18",color:f.color}}>{f.robotIds.length}대</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    {["Move","Pick","Move","Drop"].map((s,i)=>(
+                      <React.Fragment key={i}>
+                        <span className={"text-[11px] px-2 py-0.5 rounded-md font-medium "+(s==="Pick"||s==="Drop"?"bg-blue-100 text-blue-700":"bg-slate-100 text-slate-500")}>{s}</span>
+                        {i<3&&<Icon name="ArrowRight" size={10} className="text-slate-300"/>}
+                      </React.Fragment>
+                    ))}
+                  </div>
+                </div>
+                {fleet===f.id&&<div className="w-6 h-6 rounded-full bg-blue-600 grid place-items-center shrink-0"><Icon name="Check" size={13} className="text-white"/></div>}
+              </button>
+            ))}
+            <div className="flex justify-end pt-2">
+              <button onClick={()=>setStep(2)} disabled={!fleet}
+                className={"h-10 px-6 rounded-xl text-[13px] font-semibold flex items-center gap-2 transition "+(fleet?"bg-blue-600 hover:bg-blue-700 text-white shadow-sm":"bg-slate-100 text-slate-300 cursor-not-allowed")}>
+                다음 <Icon name="ArrowRight" size={14}/>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 2: 입력 폼 */}
+        {step===2&&(
+          <div>
+            <div className="flex items-center gap-3 p-4 rounded-xl mb-5" style={{background:fleetDef?.color+"12",border:`1.5px solid ${fleetDef?.color}30`}}>
+              <div className="w-9 h-9 rounded-lg grid place-items-center" style={{background:fleetDef?.color+"20"}}>
+                <Icon name={fleetDef?.icon} size={18} style={{color:fleetDef?.color}}/>
+              </div>
+              <div>
+                <div className="text-[14px] font-bold" style={{color:fleetDef?.color}}>{fleetDef?.name}</div>
+                <div className="flex items-center gap-1 mt-0.5">
+                  {["Move","Pick","Move","Drop"].map((s,i)=>(
+                    <React.Fragment key={i}>
+                      <span className="text-[10.5px] text-slate-500 font-medium">{s}</span>
+                      {i<3&&<Icon name="ArrowRight" size={9} className="text-slate-300"/>}
+                    </React.Fragment>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+              {renderForm()}
+            </div>
+            <div className="flex justify-between pt-4">
+              <button onClick={()=>setStep(1)} className="h-10 px-5 rounded-xl text-[13px] font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 flex items-center gap-2">
+                <Icon name="ArrowLeft" size={14}/> 이전
+              </button>
+              <button onClick={()=>setStep(3)} disabled={!isValid()}
+                className={"h-10 px-6 rounded-xl text-[13px] font-semibold flex items-center gap-2 transition "+(isValid()?"bg-blue-600 hover:bg-blue-700 text-white shadow-sm":"bg-slate-100 text-slate-300 cursor-not-allowed")}>
+                다음 <Icon name="ArrowRight" size={14}/>
+              </button>
+            </div>
+          </div>
+        )}
+
+        {/* Step 3: 확인 및 발행 */}
+        {step===3&&(
+          <div>
+            <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm mb-4">
+              <div className="flex items-center gap-2 mb-4">
+                <div className="w-7 h-7 rounded-lg grid place-items-center shrink-0" style={{background:fleetDef?.color+"18"}}>
+                  <Icon name={fleetDef?.icon} size={15} style={{color:fleetDef?.color}}/>
+                </div>
+                <span className="text-[14px] font-bold text-slate-900">오더 요약</span>
+                <span className="ml-auto text-[11px] px-2.5 py-1 rounded-full font-semibold" style={{background:fleetDef?.color+"18",color:fleetDef?.color}}>{fleetDef?.name}</span>
+              </div>
+              <SummaryRow label="시퀀스" value="Move → Pick → Move → Drop"/>
+              <SummaryRow label="Pick 위치" value={pickLabel}/>
+              <SummaryRow label="Drop 위치" value={dropLabel}/>
+              {fleetDef?.id==="amr"&&<SummaryRow label="Tool Cart" value={form.cartId}/>}
+              {fleetDef?.id==="agv"&&<SummaryRow label="승객" value={`${form.passengerName} (${form.passengerId})`}/>}
+              {fleetDef?.id==="arm"&&<SummaryRow label="부품 정보" value={`${form.partsCat} · ${form.line} · ${form.qty}개`}/>}
+              <SummaryRow label="담당 로봇" value={form.robotId||(fleetDef?.robotIds[0]+" (자동배정)")}/>
+              <SummaryRow label="우선순위" value={{normal:"일반",high:"높음",urgent:"긴급"}[form.priority||"normal"]}/>
+              {form.memo&&<SummaryRow label="메모" value={form.memo}/>}
+            </div>
+            <div className="flex items-center gap-3 p-4 rounded-xl bg-blue-50 border border-blue-200 mb-5">
+              <Icon name="CalendarRange" size={18} className="text-blue-600 shrink-0"/>
+              <div>
+                <div className="text-[13px] font-semibold text-blue-900">스케줄러 자동 연동</div>
+                <div className="text-[12px] text-blue-600 mt-0.5">발행 즉시 스케줄링 화면으로 이동하며 Pending 상태로 등록됩니다.</div>
+              </div>
+            </div>
+            <div className="flex justify-between">
+              <button onClick={()=>setStep(2)} className="h-10 px-5 rounded-xl text-[13px] font-medium text-slate-600 border border-slate-200 hover:bg-slate-50 flex items-center gap-2">
+                <Icon name="ArrowLeft" size={14}/> 이전
+              </button>
+              <button onClick={publish}
+                className="h-10 px-6 rounded-xl text-[13px] font-bold bg-blue-600 hover:bg-blue-700 text-white shadow-sm flex items-center gap-2 transition">
+                <Icon name="Send" size={14}/> 발행 및 스케줄러로 이동
+              </button>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted }) {
   const [orders,setOrders]=useState(initOrders.map(o=>({...o})));
   const [selOrder,setSelOrder]=useState(null);
   const [draggingRcp,setDraggingRcp]=useState(null);
@@ -3658,6 +4353,25 @@ function SchedulerView({ initialFocusRecipeId }) {
   const ganttRef=useRef(null);
   const headRef=useRef(null);
   const rColRef=useRef(null);
+
+  // 오더 템플릿에서 넘어온 pendingOrder 등록
+  useEffect(()=>{
+    if(!pendingOrder) return;
+    const newOrd = {
+      id: pendingOrder.id,
+      robotId: pendingOrder.robotId,
+      recipeId: null,
+      start: pendingOrder.startMin,
+      duration: pendingOrder.duration,
+      status: "pending",
+      label: `${pendingOrder.fleetName} · ${pendingOrder.pickNode}→${pendingOrder.dropNode}`,
+      fleetColor: pendingOrder.fleetColor,
+      detail: pendingOrder.detail,
+    };
+    setOrders(p=>[...p, newOrd]);
+    setSelOrder(newOrd.id);
+    if(onMounted) onMounted();
+  },[pendingOrder]);
 
   const allR=robots;
   const visR=fleetF.size===0?allR:allR.filter(r=>fleetF.has(r.fleet));
@@ -4901,12 +5615,14 @@ function App() {
   const [recipeRev,setRecipeRev]=useState(0);
   const [logsInitCat3,setLogsInitCat3]=useState(null);
   const [isDark,setIsDark]=useState(false);
-  useEffect(()=>{ document.documentElement.classList.toggle("dm", isDark); },[isDark]); // logs 자동 선택용
+  const [pendingOrder,setPendingOrder]=useState(null);
+  useEffect(()=>{ document.documentElement.classList.toggle("dm", isDark); },[isDark]);
 
   function navigate(id, opts={}){
     setActive(id);
     if(opts.logsCat3) setLogsInitCat3(opts.logsCat3);
-  } // recipe 변경 감지용
+    if(opts.pendingOrder){ setPendingOrder(opts.pendingOrder); }
+  }
 
   function saveRecipe(recipe) {
     const idx = recipes.findIndex(r=>r.id===recipe.id);
@@ -4931,9 +5647,10 @@ function App() {
       <div className="flex-1 min-w-0 flex flex-col">
         <Header activeLabel={activeMeta?.label||""} onOpenCmd={()=>setCmdOpen(true)}/>
         <main className="flex-1 min-h-0">
-          {active==="home"        &&<MonitoringHome onNavigate={navigate}/>}
-          {active==="work"        &&<RecipeView onSaveRecipe={saveRecipe}/>}
-          {active==="schedule"    &&<SchedulerView initialFocusRecipeId={focusRcp}/>}
+          {active==="home"          &&<MonitoringHome onNavigate={navigate}/>}
+          {active==="work"          &&<RecipeView onSaveRecipe={saveRecipe}/>}
+          {active==="order-template"&&<OrderTemplateView onNavigate={navigate}/>}
+          {active==="schedule"      &&<SchedulerView initialFocusRecipeId={focusRcp} pendingOrder={pendingOrder} onMounted={()=>setPendingOrder(null)}/>}
           {active==="analytics"   &&<AnalyticsView/>}
           {active==="robot-status"&&<RobotStatusView/>}
           {active==="infra-status"&&<InfraStatusView/>}
