@@ -4826,7 +4826,7 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
                     <select value={reqFleetF} onChange={e=>setReqFleetF(e.target.value)}
                       className="w-full h-7 pl-6 pr-6 rounded-md border border-slate-200 bg-white text-[11.5px] text-slate-800 outline-none focus:border-blue-400 appearance-none">
                       <option value="all">전체 Fleet</option>
-                      {fleets.filter(f=>["amr","agv","arm"].includes(f.id)).map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
+                      {fleets.map(f=><option key={f.id} value={f.id}>{f.name}</option>)}
                     </select>
                     <Icon name="ChevronDown" size={10} className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none"/>
                   </div>
