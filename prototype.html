@@ -4465,15 +4465,21 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
   useEffect(()=>{
     if(!pendingOrder) return;
     const newOrd = {
-      id: pendingOrder.id,
-      robotId: pendingOrder.robotId,
+      id:       pendingOrder.id,
+      robotId:  pendingOrder.robotId,
       recipeId: null,
-      start: pendingOrder.startMin,
+      start:    pendingOrder.startMin,
       duration: pendingOrder.duration,
-      status: "pending",
-      label: `${pendingOrder.fleetName} · ${pendingOrder.pickNode}→${pendingOrder.dropNode}`,
+      status:   "pending",
+      label:    `${pendingOrder.fleetName} · ${pendingOrder.pickNode}→${pendingOrder.dropNode}`,
       fleetColor: pendingOrder.fleetColor,
-      detail: pendingOrder.detail,
+      fleet:    pendingOrder.fleet,
+      fleetName:pendingOrder.fleetName,
+      pickNode: pendingOrder.pickNode,
+      dropNode: pendingOrder.dropNode,
+      detail:   pendingOrder.detail,
+      priority: pendingOrder.priority,
+      requesterId: "samsung.kim",   // 프로토타입: 현재 로그인 사용자
     };
     setOrders(p=>[...p, newOrd]);
     setSelOrder(newOrd.id);
@@ -4827,6 +4833,11 @@ function SchedulerView({ initialFocusRecipeId, pendingOrder, onMounted, onNaviga
                         {o.detail?.cartId&&<div className="mt-1.5 text-[10.5px]"><span className="text-slate-400">Cart </span><span className="font-semibold text-slate-700">{o.detail.cartId} ({o.detail.cartCat})</span></div>}
                         {o.detail?.passengerId&&<div className="mt-1.5 text-[10.5px]"><span className="text-slate-400">승객 ID </span><span className="font-semibold text-slate-700">{o.detail.passengerId}</span></div>}
                         {o.detail?.userId&&<div className="mt-1.5 text-[10.5px]"><span className="text-slate-400">사용자 ID </span><span className="font-semibold text-slate-700">{o.detail.userId}</span></div>}
+                        <div className="mt-1.5 text-[10.5px] flex items-center gap-1">
+                          <Icon name="User" size={10} className="text-slate-400 shrink-0"/>
+                          <span className="text-slate-400">요청자 </span>
+                          <span className="font-semibold text-blue-700 font-mono">{o.requesterId||"—"}</span>
+                        </div>
                       </div>
                     );
                   })}
