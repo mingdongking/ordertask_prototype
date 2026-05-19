@@ -4384,6 +4384,7 @@ function OrderTemplateView({ onNavigate }) {
               {schedMode==="immediate"&&(
                 <div className="text-[10.5px] text-blue-600 text-center py-1">요청 즉시 실행 (약 2분 후 시작)</div>
               )}
+              <Field label="담당 로봇">
                 <Sel val={form.robotId} onChange={v=>setF("robotId",v)}
                   opts={fleetDef.robotIds.map(id=>({id,label:id}))} placeholder="자동 배정"/>
               </Field>
